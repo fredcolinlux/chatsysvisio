@@ -220,6 +220,7 @@ partagés (supprimés avec le salon). Aucune vidéo ni aucun son n'est enregistr
 | `ADMIN_ENABLED` | `false` pour couper complètement l'administration |
 | `SIGNUP_MODE` | inscriptions : `closed` (défaut), `open`, `invite` (code d'invitation) ou `approval` (validation par l'admin) |
 | `ACCOUNTS_ONLY_CREATE` | `true` : seuls les comptes créent des salons |
+| `E2EE_LABEL` | préfixe des étiquettes E2EE (vide = celui de ChatSysVisio) ; posé par la migration depuis un ancien nom pour garder les salons chiffrés existants |
 | `GUEST_JOIN` | `false` : il faut un compte même pour rejoindre par lien |
 
 Les réglages modifiés dans l'administration (création anonyme et code, `CREATE_PER_10MIN`, limite par salon, quotas,

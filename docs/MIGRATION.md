@@ -15,10 +15,34 @@ changent ; les données et la configuration se reprennent telles quelles.
 | Cookies | `__Host-cc_sid`, `__Host-cc_admin` | `__Host-csv_sid`, `__Host-csv_admin` |
 | Dérivation E2EE | étiquette `<ancien>/e2ee/v1` | `chatsysvisio/e2ee/v1` |
 
-Conséquences : les sessions en cours sont fermées (nouvelle connexion à l'administration), et un ancien client ne peut
-pas rejoindre un salon chiffré servi par ChatSysVisio : tout le monde recharge la page (**Ctrl+F5**).
+Conséquences : les sessions en cours sont fermées (nouvelle connexion à l'administration et aux comptes) et tout le
+monde recharge la page (**Ctrl+F5**). Sans `E2EE_LABEL` (migration manuelle), les salons chiffrés existants deviennent
+illisibles ; la procédure automatique le règle.
 
-## Procédure (dans le CT, en root)
+## Procédure automatique (recommandée)
+
+Depuis le dossier extrait de l'archive ChatSysVisio, en root :
+
+```bash
+OLD_NAME=ancien-nom bash deploy/migrate-from.sh        # DRY_RUN=1 pour un essai à blanc
+```
+
+Le script : sauvegarde complète (code, configuration, données, unités, CLI) dans `/var/backups/chatsysvisio-migration`,
+arrête et désactive les anciennes unités, reprend **à l'identique** la configuration (seuls les chemins changent ; les
+valeurs implicites de l'ancien code — proxys de confiance, réseaux d'administration — sont rendues explicites ; l'étiquette
+E2EE d'origine est conservée dans `E2EE_LABEL`), copie les données (l'original reste intact), installe et démarre les
+unités `chatsysvisio*`, remplace la CLI (l'ancien nom reste un alias qui redirige), puis vérifie `/healthz` et la
+configuration. Relançable sans dommage. Retour arrière :
+
+```bash
+OLD_NAME=ancien-nom bash deploy/rollback-migration.sh   # ROLLBACK_DATA=origine : données d'avant la migration
+```
+
+Avec `E2EE_LABEL`, les salons chiffrés de bout en bout existants (mot de passe, contrôle de clé, historique, fichiers)
+restent lisibles : **rien ne change pour les liens**. Restent à faire par chacun : Ctrl+F5 et reconnexion (nouveaux cookies).
+
+## Procédure manuelle
+
 
 ```bash
 OLD=ancien-nom                       # nom court de l'ancienne installation

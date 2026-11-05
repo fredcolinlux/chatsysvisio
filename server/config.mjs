@@ -42,6 +42,9 @@ export function loadConfig(over = {}) {
     aiEnabled: bool(env.AI_ENABLED, false),
     version: env.APP_VERSION || '',
     build: env.APP_BUILD || '',
+    // Préfixe des étiquettes de dérivation E2EE (vide = 'chatsysvisio/e2ee/v1/'). Une installation migrée d'un ancien nom
+    // garde l'ancien préfixe : les salons chiffrés existants (mot de passe, contrôle de clé, historique) restent lisibles.
+    e2eeLabel: /^[a-z0-9][a-z0-9._\/-]{0,62}\/$/.test(env.E2EE_LABEL || '') ? env.E2EE_LABEL : '',
     // --- Administration (1.2) : page réservée au réseau local, compte créé par « chatsysvisio-admin create-admin » ---
     adminPath: env.ADMIN_PATH || '/admin',
     // réseaux autorisés (adresse réelle du client ; X-Forwarded-For n'est cru que venant de TRUSTED_PROXIES)

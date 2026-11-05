@@ -23,7 +23,9 @@ export const MODES = ['link', 'link+pw'];
 export const HEADER = 12;                 // en-tête du protocole média (voir protocol.js)
 export const FRAME_OVERHEAD = 1 + 6 + 16; // époque + compteur + étiquette GCM
 export const FILE_MAGIC = 'CCE1';
-const L = s => 'chatsysvisio/e2ee/v1/' + s;
+// Préfixe fixé par le serveur (E2EE_LABEL, installations migrées) ; sinon celui de ChatSysVisio.
+const PFX = globalThis.document?.documentElement?.dataset?.e2ee || 'chatsysvisio/e2ee/v1/';
+const L = s => PFX + s;
 
 // ---------- Outils ----------
 export function rand(n) { const u = new Uint8Array(n); C.getRandomValues(u); return u; }

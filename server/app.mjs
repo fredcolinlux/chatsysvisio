@@ -166,7 +166,7 @@ export function createApp(cfg) {
     let t = fs.readFileSync(file, 'utf8');
     const v = encodeURIComponent(assetVersion);
     if (ext === '.html') {
-      t = t.replace(/<html lang="fr"/, `<html lang="fr" data-build="${String(cfg.build || '').replace(/[^\w.-]/g, '')}"`)
+      t = t.replace(/<html lang="fr"/, `<html lang="fr" data-build="${String(cfg.build || '').replace(/[^\w.-]/g, '')}"${cfg.e2eeLabel ? ` data-e2ee="${cfg.e2eeLabel}"` : ''}`)
         .replace(/((?:src|href)=")(\/(?:js|css)\/[\w./-]+\.(?:js|css))"/g, `$1$2?v=${v}"`);
     } else if (rel === 'sw.js') t = t.replace(/__ASSET_VERSION__/g, v);
     else t = t.replace(/(['"])((?:\.\.?\/|\/js\/)[\w./-]+\.js)\1/g, `$1$2?v=${v}$1`);
