@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#16181d">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfcfd">
+<meta name="description" content="ChatSysVisio : visio et messagerie privées, auto-hébergées.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ChatSysVisio">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="preload" href="/fonts/Inter.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/css/app.css">
+<title>Salon · ChatSysVisio</title>
+</head>
+<body>
+<div class="app">
+<aside class="side" id="side">
+  <a class="brand" href="/"><span class="logo"><i data-i="cam"></i></span>ChatSysVisio</a>
+  <a class="newbtn" href="/#nouveau"><i data-i="plus"></i>Nouveau salon<kbd>Ctrl K</kbd></a>
+  <a class="sitem" href="/public"><i data-i="globe"></i><span class="t">Salons publics</span></a>
+  <div class="scroll"><div class="sgroup">Récents</div><div id="recent"></div></div>
+  <div class="sfoot"><button class="iconbtn" data-theme-toggle title="Thème"></button><a href="/source.tar.gz">Code source (AGPL)</a><span class="ml" id="version"></span></div>
+</aside>
+<main class="main" id="main">
+  <div class="top" id="top">
+    <button class="iconbtn hide-m" id="sideBtn" type="button" title="Afficher la barre latérale" aria-pressed="false" hidden><i data-i="menu"></i></button>
+    <a class="iconbtn" href="/" title="Accueil" id="back"><i data-i="left"></i></a>
+    <h1 id="roomTitle">Salon</h1>
+    <span class="badge" id="roomBadge" hidden></span>
+    <span class="badge" id="timer" hidden></span>
+    <button type="button" class="badge" id="e2eeBadge" hidden></button>
+    <span class="badge warn" id="qualityBadge" hidden><i data-i="quality"></i>Connexion faible</span>
+    <span class="ml"></span>
+    <div class="seg viewseg hide-m" id="viewSeg" role="group" aria-label="Disposition" hidden>
+      <button type="button" data-view="grid" title="Grille" aria-label="Grille"><i data-i="grid"></i></button>
+      <button type="button" data-view="speaker" title="Orateur mis en avant" aria-label="Orateur mis en avant"><i data-i="spot"></i></button>
+    </div>
+    <button class="btn hide-m" id="inviteBtn" hidden><i data-i="qr"></i>Inviter</button>
+    <button class="iconbtn" id="peopleBtn" hidden title="Participants"><i data-i="users"></i></button>
+    <button class="iconbtn hide-m" id="panelBtn" hidden title="Afficher / masquer le panneau"><i data-i="side"></i></button>
+  </div>
+  <div id="view" class="callwrap"></div>
+</main>
+</div>
+<script type="module" src="/js/room.js"></script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#16181d">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfcfd">
+<meta name="description" content="ChatSysVisio : visio et messagerie privées, auto-hébergées.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ChatSysVisio">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="preload" href="/fonts/Inter.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/css/app.css">
+<title>Compte · ChatSysVisio</title>
+</head>
+<body>
+<div class="app">
+<aside class="side" id="side">
+  <a class="brand" href="/"><span class="logo"><i data-i="cam"></i></span>ChatSysVisio</a>
+  <a class="newbtn" href="/#nouveau"><i data-i="plus"></i>Nouveau salon<kbd>Ctrl K</kbd></a>
+  <a class="sitem" href="/public"><i data-i="globe"></i><span class="t">Salons publics</span></a>
+  <div class="scroll"><div class="sgroup">Récents</div><div id="recent"></div></div>
+  <div class="sfoot"><button class="iconbtn" data-theme-toggle title="Thème"></button><a href="/source.tar.gz">Code source (AGPL)</a><span class="ml" id="version"></span></div>
+</aside>
+<main class="main">
+  <div class="top"><a class="mobile-only brand" href="/"><span class="logo"><i data-i="cam"></i></span></a><h1>Compte</h1><button class="iconbtn ml" data-theme-toggle title="Thème"></button></div>
+  <section class="page">
+    <div class="acct" id="acct"><p class="sub">Chargement…</p></div>
+  </section>
+</main>
+</div>
+<nav class="tabbar" aria-label="Navigation">
+  <a href="/" class=""><i data-i="home"></i>Accueil</a>
+  <a href="/public"><i data-i="globe"></i>Publics</a>
+  <a href="/#nouveau"><i data-i="plus"></i>Nouveau</a>
+  <a href="#" data-theme-tab><i data-i="moon"></i>Thème</a>
+</nav>
+<script type="module" src="/js/account.js"></script>
+</body>
+</html>

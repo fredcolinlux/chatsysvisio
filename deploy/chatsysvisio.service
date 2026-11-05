@@ -1,0 +1,51 @@
+[Unit]
+Description=ChatSysVisio - visio et messagerie auto-hébergées (HTTP + WebSocket, derrière Nginx Proxy Manager)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=chatsysvisio
+Group=chatsysvisio
+WorkingDirectory=/opt/chatsysvisio
+EnvironmentFile=/etc/chatsysvisio/chatsysvisio.env
+Environment=NODE_ENV=production
+Environment=TZ=Europe/Paris
+ExecStart=/usr/bin/node /opt/chatsysvisio/server/index.mjs
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+LimitNOFILE=8192
+
+ReadWritePaths=/var/lib/chatsysvisio
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+# 25 personnes : tampons d'émission bornés à ~1,5 Mo par destinataire
+MemoryMax=768M
+TasksMax=64
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

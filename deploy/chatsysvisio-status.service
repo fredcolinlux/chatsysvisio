@@ -1,0 +1,12 @@
+[Unit]
+Description=ChatSysVisio - relevé de l'état système pour l'administration (sauvegardes, mises à jour Debian)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+Nice=10
+IOSchedulingClass=idle
+ExecStart=/usr/local/sbin/chatsysvisio-status
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true

@@ -1,0 +1,11 @@
+[Unit]
+Description=ChatSysVisio - sauvegarde demandée depuis la page d'administration
+# Le service chatsysvisio (non root) dépose requests/backup ; systemd lance alors la sauvegarde en root.
+# Aucun sudo, aucun droit supplémentaire pour le service web.
+
+[Path]
+PathExists=/var/lib/chatsysvisio/requests/backup
+Unit=chatsysvisio-backup.service
+
+[Install]
+WantedBy=paths.target

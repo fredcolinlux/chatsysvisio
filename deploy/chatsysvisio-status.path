@@ -1,0 +1,9 @@
+[Unit]
+Description=ChatSysVisio - actualisation de l'état demandée depuis l'administration
+
+[Path]
+PathExists=/var/lib/chatsysvisio/requests/status
+Unit=chatsysvisio-status.service
+
+[Install]
+WantedBy=paths.target

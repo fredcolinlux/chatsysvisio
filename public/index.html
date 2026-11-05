@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#16181d">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfcfd">
+<meta name="description" content="ChatSysVisio : visio et messagerie privées, auto-hébergées.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ChatSysVisio">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="preload" href="/fonts/Inter.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/css/app.css">
+<title>ChatSysVisio — visio & messagerie</title>
+</head>
+<body class="homepage">
+<div class="home">
+  <header class="hnav">
+    <a class="brand" href="/"><span class="logo"><i data-i="cam"></i></span>ChatSysVisio</a>
+    <nav class="hlinks" aria-label="Navigation principale">
+      <a href="/public"><i data-i="globe"></i><span>Salons publics</span></a>
+      <a href="/compte"><i data-i="user"></i><span>Compte</span></a>
+      <button class="iconbtn" data-theme-toggle title="Thème"></button>
+    </nav>
+  </header>
+  <main class="hmain" id="nouveau">
+    <section class="hhero">
+      <h1 class="display"><span id="hello">Bonjour</span>,<br><span class="soft">on se voit où&nbsp;?</span></h1>
+      <p class="lede">Une visio privée sur ton propre serveur, chiffrée de bout en bout. Donne un nom au salon, ou colle un lien d'invitation.</p>
+      <form class="composer" id="create" autocomplete="off">
+        <label class="sr" for="roomName">Nom du salon ou lien d'invitation</label>
+        <textarea id="roomName" rows="1" maxlength="200" placeholder="Nom du salon ou lien d'invitation…" required></textarea>
+        <div class="extra" id="extra" hidden>
+          <input type="password" id="roomPw" placeholder="Mot de passe du salon (optionnel)" autocomplete="new-password" maxlength="200" hidden>
+          <input type="password" id="createPw" placeholder="Code de création" autocomplete="off" maxlength="200" hidden>
+        </div>
+        <div class="crow">
+          <button type="button" class="chip on" id="chipPrivate" aria-pressed="true"><i data-i="lock"></i><span>Privé</span></button>
+          <button type="button" class="chip" id="chipPw" aria-pressed="false"><i data-i="lock"></i>Mot de passe</button>
+          <button type="button" class="chip on" id="chipE2ee" aria-pressed="true"><i data-i="shield"></i>Bout en bout</button>
+          <label class="sr" for="limit">Nombre maximum de personnes</label>
+          <select id="limit" class="limitsel" title="Nombre maximum de personnes">
+            <option value="0">Max 25 (illimité)</option><option value="2">Max 2</option><option value="3">Max 3</option>
+            <option value="5">Max 5</option><option value="10">Max 10</option><option value="25">Max 25</option>
+          </select>
+          <button class="send go" id="go" type="submit" title="Créer ou rejoindre" disabled><span>Entrer</span><i data-i="up"></i></button>
+        </div>
+      </form>
+      <p class="e2eenote ok" id="e2eeNote" aria-live="polite"></p>
+    </section>
+    <section class="hside" aria-label="Rejoindre un salon">
+      <h2 class="hlabel">Rejoindre</h2>
+      <div class="cards" id="cards">
+        <a class="card" href="#" id="lastRoom" hidden><div class="h"><span class="dot"></span><span class="t"></span></div><div class="d"></div></a>
+        <a class="card" href="/public"><div class="h"><i data-i="globe"></i>Salons publics</div><div class="d" id="pubInfo">Rejoins un salon ouvert à tous.</div></a>
+        <button class="card" type="button" id="pasteLink"><div class="h"><i data-i="link"></i>Rejoindre par lien</div><div class="d">Colle un lien d'invitation ou scanne un QR code.</div></button>
+      </div>
+      <h2 class="hlabel" id="recentLabel" hidden>Récents</h2>
+      <div class="cards" id="homeRecent"></div>
+    </section>
+  </main>
+  <footer class="foot" id="a-propos">
+    <span><i data-i="shield"></i>Aucune donnée chez un tiers, aucun traqueur</span>
+    <span><i data-i="users"></i>Jusqu'à 25 personnes</span>
+    <span><i data-i="screen"></i>Partage d'écran, chat, fichiers</span>
+    <span class="ml"><a href="/source.tar.gz">Code source (AGPL)</a> · <span id="version"></span></span>
+  </footer>
+</div>
+<nav class="tabbar" aria-label="Navigation">
+  <a href="/" class="on"><i data-i="home"></i>Accueil</a>
+  <a href="/public" class=""><i data-i="globe"></i>Publics</a>
+  <a href="/#nouveau"><i data-i="plus"></i>Nouveau</a>
+  <a href="#" data-theme-tab><i data-i="moon"></i>Thème</a>
+</nav>
+<script type="module" src="/js/home.js"></script>
+</body>
+</html>

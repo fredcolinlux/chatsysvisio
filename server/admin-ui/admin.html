@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#16181d">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfcfd">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="/icons/icon-192.png" type="image/png">
+<link rel="preload" href="/fonts/Inter.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="admin.css">
+<title>Administration · ChatSysVisio</title>
+</head>
+<body class="adm">
+<div id="login" class="adm-login" hidden>
+  <form class="adm-card" id="loginForm" autocomplete="on">
+    <div class="acct-head"><span class="logo"><i data-i="shield"></i></span><h2>Administration</h2>
+      <p class="sub">Accès réservé au réseau local. Mot de passe et code à usage unique (application d'authentification) obligatoires.</p></div>
+    <div class="field"><label for="user">Identifiant</label><div class="inp"><i data-i="user"></i><input id="user" autocomplete="username" maxlength="32" required></div></div>
+    <div class="field"><label for="password">Mot de passe</label><div class="inp"><i data-i="lock"></i><input id="password" type="password" autocomplete="current-password" maxlength="200" required></div></div>
+    <div class="field"><label for="code">Code à 6 chiffres (ou code de secours)</label><div class="inp"><i data-i="clock"></i><input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="9" required></div></div>
+    <div class="formerr" id="loginErr" role="alert"></div>
+    <button class="btn pri wide big" type="submit">Se connecter</button>
+    <p class="hint" id="noAdmin" hidden><i data-i="shield"></i><span>Aucun administrateur n'existe encore. Sur le serveur : <code>sudo chatsysvisio-admin create-admin</code></span></p>
+    <p class="hint"><i data-i="shield"></i><span id="loginVer">ChatSysVisio</span></p>
+  </form>
+</div>
+<div class="app" id="shell" hidden>
+<aside class="side">
+  <a class="brand" href="/"><span class="logo"><i data-i="cam"></i></span>ChatSysVisio</a>
+  <div class="sgroup">Administration</div>
+  <nav id="nav" class="adm-nav"></nav>
+  <div class="sfoot"><button class="iconbtn" data-theme-toggle title="Thème"></button><span id="who"></span><span class="ml" id="ver"></span></div>
+</aside>
+<main class="main">
+  <div class="top"><span class="mobile-only logo"><i data-i="shield"></i></span><h1 id="title">Vue d'ensemble</h1>
+    <span class="badge ok hide-m" id="live"><span class="live"></span>en direct</span>
+    <button class="btn sm ml" id="logout" type="button"><i data-i="leave"></i><span class="hide-m">Déconnexion</span></button></div>
+  <section class="adm-page" id="page"></section>
+</main>
+</div>
+<nav class="tabbar" id="tabbar" aria-label="Sections" hidden></nav>
+<script type="module" src="admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+[Unit]
+Description=ChatSysVisio - sauvegarde des données (salons, messages, fichiers) et de la configuration
+After=local-fs.target
+
+[Service]
+Type=oneshot
+Nice=10
+IOSchedulingClass=idle
+ExecStart=/usr/local/sbin/chatsysvisio-backup

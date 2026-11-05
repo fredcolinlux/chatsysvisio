@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /$
+Allow: /public
+Disallow: /r/
+Disallow: /f/
+Disallow: /api/
