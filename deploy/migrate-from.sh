@@ -80,7 +80,7 @@ if [ "$MODE" = complete ]; then
     rm -rf "$DATA_DIR.tmp"; cp -a "$O_DATA" "$DATA_DIR.tmp"
     rm -rf "$DATA_DIR"; mv "$DATA_DIR.tmp" "$DATA_DIR"
     chown -R "$APP_USER:$APP_USER" "$DATA_DIR"; chmod 0750 "$DATA_DIR"; install -d -m 0700 -o "$APP_USER" -g "$APP_USER" "$DATA_DIR/requests"
-    n_adm=$(grep -o '"user"' "$DATA_DIR/admin.json" 2>/dev/null | wc -l); n_acc=$(grep -o '"name"' "$DATA_DIR/accounts.json" 2>/dev/null | wc -l)
+    n_adm=$(grep -o '"user"' "$DATA_DIR/admin.json" 2>/dev/null | wc -l || true); n_acc=$(grep -o '"name"' "$DATA_DIR/accounts.json" 2>/dev/null | wc -l || true)
     echo "  administrateurs : $n_adm · comptes : $n_acc · $(du -sh "$DATA_DIR" | cut -f1)"
     cmp -s "$O_DATA/admin.json" "$DATA_DIR/admin.json" 2>/dev/null && echo "  admin.json identique (mot de passe, TOTP et codes de secours intacts)" || [ ! -f "$O_DATA/admin.json" ]
   fi
