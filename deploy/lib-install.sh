@@ -84,6 +84,7 @@ deploy_code() {
   [ -f "$src/server/index.mjs" ] || die "sources introuvables dans $src"
   [ -f "$src/node_modules/ws/package.json" ] || die "node_modules/ws absent de l'archive (archive incomplète ?)"
   [ -f "$src/public/vendor/mediapipe/vision_bundle.mjs" ] || warn "public/vendor absent : flou et arrière-plans indisponibles (lancer npm ci && npm run vendor)."
+  [ -f "$src/public/vendor/rnnoise/rnnoise-worklet.js" ] || warn "public/vendor/rnnoise absent : réduction de bruit du micro indisponible (lancer npm ci && npm run vendor)."
   run install -d -m 0755 -o root -g root "$APP_DIR"
   if [ "${DRY_RUN:-0}" = 1 ]; then echo "  [à blanc] copie de $src vers $APP_DIR"; return; fi
   tar -C "$src" --exclude=./data --exclude=./test-results --exclude=./playwright-report --exclude=./.git -cf - . | tar -C "$APP_DIR" -xf -
