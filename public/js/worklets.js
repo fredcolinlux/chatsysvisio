@@ -1,4 +1,5 @@
 // AudioWorklets : capture du micro par blocs de 20 ms, et lecteur avec tampon de gigue par participant.
+// (Sans import : ce module doit se charger partout. Le dé-esseur est à part, dans deesser-worklet.js.)
 class CcCapture extends AudioWorkletProcessor {
   constructor() { super(); this.size = Math.round(sampleRate * 0.02); this.buf = new Float32Array(this.size); this.n = 0; }
   process(inputs) {
@@ -51,3 +52,4 @@ class CcPlayer extends AudioWorkletProcessor {
   }
 }
 registerProcessor('cc-player', CcPlayer);
+

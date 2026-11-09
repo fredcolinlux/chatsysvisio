@@ -16,6 +16,11 @@ Composants tiers servis localement :
 | Composant | Licence | Usage |
 |---|---|---|
 | @mediapipe/tasks-vision + modèle selfie_segmenter | Apache-2.0 (Google) | détourage pour flou / arrière-plan |
+| RNNoise (Jean-Marc Valin, Xiph.Org, Mozilla) | BSD-3-Clause | réduction de bruit du micro (wasm local) |
+| @shiguredo/rnnoise-wasm | Apache-2.0 | compilation WebAssembly de RNNoise |
+| @sapphi-red/web-noise-suppressor | MIT | AudioWorklet RNNoise |
 | qrcode-generator (Kazuhiko Arase) | MIT | QR code d'invitation généré localement |
 | ws | MIT | serveur WebSocket |
 | Police Inter (Rasmus Andersson) | SIL OFL 1.1 | typographie |
+
+Textes des licences RNNoise : `docs/licences/` (copiés dans `public/vendor/rnnoise/`).

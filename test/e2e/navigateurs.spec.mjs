@@ -1,7 +1,7 @@
 // WebKit (moteur de Safari / iPhone) et Firefox face à Chrome, dans le même salon, via le seul port HTTP(S).
 import { test, expect, chromium } from '@playwright/test';
 import fs from 'node:fs';
-import { createRoom, joinRoom, waitMedia, withQuery, expectAudible } from './helpers.mjs';
+import { createRoom, joinRoom, waitMedia, withQuery, expectAudible, measureMicFx } from './helpers.mjs';
 
 const chromeOpts = {
   executablePath: fs.existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : undefined,
@@ -53,5 +53,26 @@ test('sans WebCodecs (ex. iPhone iOS < 26) : repli JPEG + ADPCM', async ({ brows
   const { w, c, chrome, wctx } = await pair(browser, baseURL, '?force=jpeg,adpcm');
   await waitMedia(w, { video: 5 }); await waitMedia(c, { video: 5, audio: micOk(browser) ? 10 : 0 });
   expect(await c.evaluate(() => window.__cc.codecs)).toEqual({ video: 'jpeg', audio: 'adpcm' });
+  await chrome.close(); await wctx.close();
+});
+
+// Traitement du micro dans ce moteur : RNNoise (wasm dans l'AudioWorklet, sous la CSP de la page d'appel), dé-esseur,
+// compresseur, puis interrupteurs actifs pendant l'appel avec Chrome en face.
+test('traitement du micro : réduction de bruit, dé-esseur et compresseur actifs', async ({ browser, baseURL }) => {
+  const OFF = { ns: false, comp: false, deess: false };
+  const { w, c, chrome, wctx } = await pair(browser, baseURL);
+  const nz = await measureMicFx(w, { ...OFF, ns: true }, { kind: 'noise', db: -30 });
+  const s = await measureMicFx(w, { ...OFF, deess: true }, { kind: 'tone', f: 7000, db: -10 });
+  const q = await measureMicFx(w, { ...OFF, comp: true }, { kind: 'tone', f: 1000, db: -40 });
+  const vo = await measureMicFx(w, { ...OFF, ns: true }, { kind: 'voice', db: -14, noiseDb: -45 });
+  console.log(browser.browserType().name(), 'voix avec réduction de bruit', (vo.outDb - vo.inDb).toFixed(1));
+  expect(vo.outDb - vo.inDb).toBeGreaterThan(-6); // la voix passe (pas un simple silence)
+  console.log(browser.browserType().name(), 'bruit', (nz.outDb - nz.inDb).toFixed(1), 'sifflante', (s.outDb - s.inDb).toFixed(1), 'voix faible', (q.outDb - q.inDb).toFixed(1), JSON.stringify(nz.st));
+  expect(nz.st.ns).toBe('on'); expect(nz.outDb - nz.inDb).toBeLessThan(-10);
+  expect(s.outDb - s.inDb).toBeLessThan(-6); expect(q.outDb - q.inDb).toBeGreaterThan(4);
+  await w.evaluate(() => localStorage.setItem('csv-micfx', JSON.stringify({ ns: true, comp: true, deess: true })));
+  await w.evaluate(() => window.__ccState.audio.setFx({ ns: true, comp: true, deess: true }));
+  await expect.poll(() => w.evaluate(() => ({ ...window.__ccState.audio.chain.status })), { timeout: 10_000 }).toEqual({ ns: 'on', comp: 'on', deess: 'on' });
+  if (micOk(browser)) await expectAudible(c); else await waitMedia(w, { video: 0, audio: 10 });
   await chrome.close(); await wctx.close();
 });

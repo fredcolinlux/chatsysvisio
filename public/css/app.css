@@ -220,6 +220,17 @@ button.pill{cursor:pointer}
 .sw{margin-left:auto;width:36px;height:22px;border-radius:999px;background:var(--panel3);box-shadow:inset 0 0 0 1px var(--line2);position:relative;flex:none;transition:background-color var(--d-base) var(--ease-out)}
 .sw::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(5,8,15,.3);transition:transform var(--d-base) var(--ease-out)}
 .on>.sw,.sw.on{background:var(--acc-solid);box-shadow:none}.on>.sw::after,.sw.on::after{transform:translateX(14px)}
+/* interrupteurs du traitement micro : une ligne par réglage, libellé + description */
+.toggles.fx{grid-template-columns:1fr;gap:6px;margin:2px 0 6px}
+.tg{transition:transform var(--d-press) var(--ease-out),box-shadow var(--d-base) var(--ease-out)}
+.tg:active{transform:scale(.97)}
+.tg.on{box-shadow:var(--sh-sm),inset 0 0 0 1px var(--acc-line)}
+.tg.na .sw{opacity:.45}
+.tgt{display:flex;flex-direction:column;gap:2px;min-width:0}
+.tgt b{font-weight:550;font-size:13.5px}
+.tgt small{color:var(--muted);font-size:12px;line-height:1.35}
+.fxnow{min-height:16px;color:var(--muted);font-size:12px;margin:0 0 14px;font-feature-settings:"tnum"}
+@media (prefers-reduced-motion:reduce){.tg,.tg:active{transition:none;transform:none}}
 .bgs{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin:2px 0 14px}
 .bgopt{height:40px;border-radius:var(--r-sm);background:var(--panel2);box-shadow:var(--sh-border);overflow:hidden;display:grid;place-items:center;color:var(--fg2);font-size:11px;position:relative}
 .bgopt.on{box-shadow:0 0 0 2px var(--ring)}

@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; OUT=$(cd "${1:-$ROOT/..}" && pwd)
 NV=${NODE_VERSION:-v24.22.2}; CACHE=${NODE_CACHE:-$ROOT/../.node-cache}
 cd "$ROOT"
-[ -f public/vendor/mediapipe/vision_bundle.mjs ] || node scripts/vendor.mjs
+[ -f public/vendor/mediapipe/vision_bundle.mjs ] && [ -f public/vendor/rnnoise/rnnoise-worklet.js ] || node scripts/vendor.mjs
 [ -f node_modules/ws/package.json ] || npm ci --omit=dev
 V=$(cat VERSION); NAME=chatsysvisio-$V
 mkdir -p "$CACHE"

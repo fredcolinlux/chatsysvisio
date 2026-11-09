@@ -1,6 +1,6 @@
 # ChatSysVisio — Manuel d'installation et d'utilisation
 
-*Version 1.5.1 · licence AGPL-3.0-or-later · fork de Camus*
+*Version 1.6.0 · licence AGPL-3.0-or-later · fork de Camus*
 
 ![Accueil](img/accueil-bureau.png)
 
@@ -19,6 +19,7 @@ Fonctions principales :
 - vidéo jusqu'en **1080p** (Auto / 360p / 720p / 1080p / Éco), HD envoyée seulement à qui l'affiche en grand ;
 - mosaïque paginée ou **mode orateur**, partage d'écran, plein écran, image dans l'image ;
 - **flou** et **arrière-plans** (détourage MediaPipe exécuté dans le navigateur) ;
+- **traitement du micro** : réduction de bruit (RNNoise), compresseur et dé-esseur, activables séparément ;
 - chat : réponses, Markdown, réactions, **fichiers et images**, « … écrit » ; main levée, réactions ;
 - invitation par lien ou **QR code** (généré localement), appli installable (PWA), thème sombre / clair, mobile ;
 - **administration** (réseau local seulement, mot de passe + **TOTP**) ; **comptes** utilisateurs facultatifs.
@@ -54,16 +55,16 @@ la police Inter, MediaPipe et son modèle, et **Node.js 24 officiel** (linux-x64
 Depuis votre poste :
 
 ```bash
-scp chatsysvisio-1.5.1.tar.gz chatsysvisio-1.5.1.tar.gz.sha256 root@10.0.0.20:/root/
+scp chatsysvisio-1.6.0.tar.gz chatsysvisio-1.6.0.tar.gz.sha256 root@10.0.0.20:/root/
 ```
 
 Sous Windows, WinSCP ou `pscp` (PuTTY) font la même chose. Dans le CT :
 
 ```bash
 cd /root
-sha256sum -c chatsysvisio-1.5.1.tar.gz.sha256      # doit afficher : OK
-tar -xzf chatsysvisio-1.5.1.tar.gz
-cd chatsysvisio-1.5.1
+sha256sum -c chatsysvisio-1.6.0.tar.gz.sha256      # doit afficher : OK
+tar -xzf chatsysvisio-1.6.0.tar.gz
+cd chatsysvisio-1.6.0
 sha256sum -c --quiet SHA256SUMS                     # intégrité de chaque fichier (aucune sortie = OK)
 ```
 
@@ -199,8 +200,33 @@ Pour atteindre le CT depuis Internet, passez par un VPN ou un bastion : n'expose
 
 ### Salle d'attente
 
-Aperçu caméra, niveau du micro, choix de la caméra, du micro et du haut-parleur, **flou** ou **arrière-plan** (images
-fournies ou la vôtre), puis **Rejoindre**.
+Aperçu caméra, niveau du micro, choix de la caméra, du micro et du haut-parleur, **traitement du micro**, **flou** ou
+**arrière-plan** (images fournies ou la vôtre), puis **Rejoindre**.
+
+### Traitement du micro (1.6)
+
+Trois interrupteurs **indépendants**, sous « Traitement du micro » : dans la salle d'attente, et pendant l'appel par le
+menu « … » → **Traitement du micro** (ou « Arrière-plan et appareils »). Ils sont enregistrés dans le navigateur et
+s'appliquent **à chaud**, sans couper le micro ni l'appel. Tous sont coupés par défaut.
+
+| Réglage | Effet | Quand l'activer |
+|---|---|---|
+| **Réduction de bruit** | RNNoise (réseau de neurones de Xiph/Mozilla, WebAssembly exécuté sur l'appareil) : retire souffle, ventilation, clavier, bruit de rue. Mesuré : bruit large bande −21 dB, voix conservée | pièce bruyante, PC portable qui ventile |
+| **Compresseur** | rapproche les passages faibles et forts (seuil −26 dB, ratio 4:1, attaque 4 ms, relâchement 180 ms, compensation +2 dB) | voix qui varie, on s'éloigne du micro |
+| **Dé-esseur** | atténue seulement la bande 5–9 kHz quand elle domine (jusqu'à −14 dB) : les « s » et « ch » sifflants. Hors sifflante, le son est intact | micro-casque ou micro très brillant |
+
+Chaîne : micro → réduction de bruit → compresseur → dé-esseur → encodeur Opus (puis chiffrement de bout en bout).
+Tout est calculé localement : rien ne part vers un service extérieur. La réduction de bruit **légère** du navigateur
+(`noiseSuppression` de getUserMedia, avec l'annulation d'écho) reste toujours active ; l'interrupteur ajoute RNNoise,
+bien plus efficace. Sous les interrupteurs, la réduction en cours s'affiche en direct (« Compression : −4,0 dB »).
+« Infos techniques » indique l'état réel de chaque étage.
+
+![Traitement du micro](img/micro-traitement.png)
+
+Coût processeur (mesuré sur PC, `node scripts/micfx-bench.mjs`) : réduction de bruit ≈ 1,6 % d'un cœur, compresseur
+0,4 %, dé-esseur 0,2 %. Sur téléphone, comptez quelques % d'un cœur (estimation). Limites : RNNoise est prévu pour
+48 kHz ; si le navigateur tourne à 44,1 kHz (certains Mac, Firefox), l'effet est un peu moindre et c'est signalé. Sans
+WebAssembly, l'interrupteur affiche « indisponible » et le compresseur et le dé-esseur continuent de fonctionner.
 
 ### Pendant l'appel
 
@@ -213,6 +239,7 @@ fournies ou la vôtre), puis **Rejoindre**.
 | Épingler, plein écran, image dans l'image | menu d'une vignette |
 | Qualité (Auto, 360p, 720p, **1080p**, Éco) | menu « … » → Qualité vidéo |
 | Flou / arrière-plan, appareils | menu « … » → Arrière-plan et appareils |
+| Réduction de bruit, compresseur, dé-esseur | menu « … » → Traitement du micro |
 | Infos techniques (diagnostic) | menu « … » |
 | Inviter (lien, QR) | bouton Inviter |
 

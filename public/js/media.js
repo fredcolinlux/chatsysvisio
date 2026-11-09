@@ -5,6 +5,7 @@ import { ceilingFor, clampToSource, hdParams, screenParams, SendAdapter, normali
 import { AdpcmEncoder, adpcmDecode, ADPCM_RATE, Resampler, rmsLevel } from './adpcm.js';
 import { roundLevel } from './e2ee.js';
 import { opusConfigs } from './audio-config.js';
+import { MicChain, loadFx } from './micfx.js';
 
 const NOLAG = typeof location !== 'undefined' && (new URLSearchParams(location.search).get('force') || '').includes('nolag');
 export const stats = (window.__cc = window.__cc || { sent: { video: 0, audio: 0, bytes: 0 }, recv: { video: {}, audio: {} }, decoded: { video: {}, audio: {} }, played: {}, codecs: {}, errors: [] });
@@ -390,7 +391,7 @@ export class Engine {
 
 // ---------- Audio ----------
 export class AudioIO {
-  constructor() { this.ctx = null; this.codec = 'adpcm'; this.decs = new Map(); this.muted = true; this.level = 0; this.onLevel = null; }
+  constructor() { this.ctx = null; this.codec = 'adpcm'; this.decs = new Map(); this.muted = true; this.level = 0; this.onLevel = null; this.fx = loadFx(); this.chain = null; }
   async init() {
     const AC = window.AudioContext || window.webkitAudioContext;
     try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch {}
@@ -413,6 +414,14 @@ export class AudioIO {
   outputPeak() {
     if (!this.analyser) return 0;
     this.analyser.getFloatTimeDomainData(this._abuf); let e = 0; for (const x of this._abuf) e = Math.max(e, Math.abs(x)); return e;
+  }
+  // Interrupteurs du micro ({ ns, comp, deess }) : appliqués à chaud ; renvoie l'état effectif.
+  async setFx(fx) {
+    this.fx = { ...fx };
+    if (!this.chain) return null;
+    const st = await this.chain.set(this.fx);
+    stats.micfx = { ...st, rate: this.ctx.sampleRate, simd: this.chain.ns?.simd ?? null };
+    return st;
   }
   get running() { return this.ctx?.state === 'running'; }
   setSink(id) { if (this.ctx?.setSinkId) return this.ctx.setSinkId(id || '').catch(() => {}); }
@@ -440,10 +449,13 @@ export class AudioIO {
     this.send = send;
     try { this.src?.disconnect(); } catch {}
     try { this.cap?.disconnect(); } catch {}
+    try { this.chain?.output.disconnect(); } catch {}
     if (!stream || !stream.getAudioTracks().length) return;
     this.src = this.ctx.createMediaStreamSource(stream);
     this.cap = new AudioWorkletNode(this.ctx, 'cc-capture', { numberOfOutputs: 1, outputChannelCount: [1] });
-    this.src.connect(this.cap);
+    // Traitements du micro (réduction de bruit, compresseur, dé-esseur) : la chaîne est gardée d'un micro à l'autre.
+    if (!this.chain) { this.chain = new MicChain(this.ctx); this.setFx(this.fx); }
+    this.src.connect(this.chain.input); this.chain.output.connect(this.cap);
     // Sortie muette pour garder le nœud actif sur tous les navigateurs.
     const g = this.ctx.createGain(); g.gain.value = 0; this.cap.connect(g).connect(this.ctx.destination);
     if (!this.acc) this.resetEncoder();

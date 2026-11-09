@@ -18,6 +18,7 @@ pages, API, video and audio all go through WebSocket — no UDP, no TURN server.
 - **End-to-end encryption** for private rooms (video, audio, screen, chat, files); the key stays in the link fragment.
 - WebCodecs video up to **1080p** (VP8 / H.264, JPEG fallback), speaker view, screen sharing, picture-in-picture.
 - Background **blur / replacement** (MediaPipe, in the browser), chat with Markdown, reactions, files and images.
+- **Microphone processing** (1.6): noise suppression (RNNoise, WebAssembly, local), compressor and de-esser, each switchable on its own, applied live.
 - Installable PWA, dark / light themes, mobile layout, QR-code invitations generated locally.
 - LAN-only **admin console** (password + TOTP), optional user accounts, nightly backups.
 - Strict security headers (CSP without `unsafe-inline`, HSTS, COOP/COEP) — **A+** on WebGuardian.
@@ -32,8 +33,8 @@ The release archive bundles the code, its dependencies, the Inter font, MediaPip
 **Node.js 24** build (linux-x64 and linux-arm64, SHA256-checked). No network access is needed during installation.
 
 ```bash
-sha256sum -c chatsysvisio-1.5.1.tar.gz.sha256
-tar -xzf chatsysvisio-1.5.1.tar.gz && cd chatsysvisio-1.5.1
+sha256sum -c chatsysvisio-1.6.0.tar.gz.sha256
+tar -xzf chatsysvisio-1.6.0.tar.gz && cd chatsysvisio-1.6.0
 sudo bash install.sh        # asks for the public URL and the reverse proxy IP
 ```
 

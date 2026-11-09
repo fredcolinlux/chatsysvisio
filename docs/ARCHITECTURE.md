@@ -333,6 +333,23 @@ autres (et les leurs pour lui) → « pas de son » jusqu'à Ctrl+F5. Correctifs
   les deux sens, en salon chiffré et public, micro coupé = silence ; Chromium et Edge, et Chrome ↔ WebKit/Firefox dans
   `navigateurs.spec.mjs`. Panneau « Infos techniques » (menu « … ») avec les compteurs audio.
 
+## Traitement du micro (1.6)
+
+- Chaîne Web Audio dans le même `AudioContext` que la capture (`public/js/micfx.js`) :
+  `MediaStreamSource → [RNNoise] → [DynamicsCompressor + gain +2 dB] → [dé-esseur] → cc-capture → Opus`.
+  Chaque interrupteur recâble les nœuds (`MicChain.set`) : le micro n'est pas rouvert, l'appel continue. Réglages dans
+  `localStorage['csv-micfx']` (`{ ns, comp, deess }`, tous coupés par défaut).
+- **Réduction de bruit** : RNNoise (BSD-3-Clause) compilé en wasm par `@shiguredo/rnnoise-wasm` (Apache-2.0), worklet
+  de `@sapphi-red/web-noise-suppressor` (MIT), copiés par `scripts/vendor.mjs` dans `public/vendor/rnnoise/` avec leurs
+  licences (`docs/licences/`). Version SIMD si le navigateur la valide, sinon version simple. Le binaire est téléchargé
+  par la page puis transmis au worklet (`processorOptions`). Latence ajoutée ≈ 27 ms. Aucun changement de CSP :
+  `'wasm-unsafe-eval'` était déjà présent sur la seule page d'appel (MediaPipe) ; l'accueil et les autres pages restent sans.
+- **Dé-esseur** (`public/js/dsp.js`, worklet `cc-deesser`) : passe-bande 5–9 kHz en détection latérale ;
+  `y = x − (1 − g)·bande(x)`, g calculé sur l'enveloppe de la bande (seuil −34 dBFS et niveau global − 9 dB, ratio 4:1,
+  jusqu'à −14 dB, attaque 1 ms, relâchement 70 ms). Hors sifflante g = 1 : sortie identique à l'entrée.
+- Tests : `test/unit/micfx.test.mjs` (DSP), `test/e2e/micfx.spec.mjs` (mesure du signal par rendu hors ligne dans la page
+  d'appel, interrupteurs, application à chaud, repli sans WebAssembly). Coût : `scripts/micfx-bench.mjs`.
+
 ## Interface et système visuel (1.4, mise en page 1.5)
 
 Inspirée d'Emil Kowalski (emilkowal.ski, Sonner, Vaul) et des règles du skill « impeccable » (mode « operate » :

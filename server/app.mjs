@@ -410,7 +410,7 @@ export function createApp(cfg) {
       if (req.method === 'POST') { securityHeaders(req, res, cfg); return err(res, 404, 'Introuvable'); }
       let rel; try { rel = decodeURIComponent(p.slice(1)); } catch { securityHeaders(req, res, cfg); return err(res, 400, 'Requête invalide'); }
       if (rel.includes('\0') || rel.startsWith('.') || rel.includes('/.')) return notFound(req, res);
-      const wasm = rel.startsWith('vendor/mediapipe/') || rel.startsWith('js/');
+      const wasm = rel.startsWith('vendor/mediapipe/') || rel.startsWith('vendor/rnnoise/') || rel.startsWith('js/');
       return serveStatic(req, res, rel, { wasm });
     } catch (e) {
       if (!res.headersSent) { securityHeaders(req, res, cfg); err(res, e.status || 500, e.status ? e.message : 'Erreur interne'); }

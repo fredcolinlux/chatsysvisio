@@ -26,13 +26,15 @@ Dérivé de [Camus](https://github.com/camuschat/camus) (AGPL-3.0, voir `NOTICE.
 - **Couleurs fidèles (1.5.1)** : l'émetteur annonce l'espace colorimétrique réel de son flux VP8 (plage pleine/limitée,
   BT.601/709), le récepteur décode en conséquence ; voile sous les noms allégé. Mesuré par une mire (`scripts/color-measure.mjs`,
   test `couleurs.spec.mjs`) : ΔE moyen 3,1 → 0,3.
+- **Traitement du micro (1.6)** : réduction de bruit (RNNoise en WebAssembly, calculée sur l'appareil), compresseur et
+  dé-esseur, trois interrupteurs indépendants appliqués à chaud pendant l'appel (salle d'attente ou menu « … »).
 - **Comptes facultatifs** : pseudo réservé, inscriptions fermées / ouvertes / sur invitation / validées par l'admin.
 
 **Installation rapide (paquet autonome hors ligne, Debian 13)** :
 
 ```bash
-sha256sum -c chatsysvisio-1.5.1.tar.gz.sha256
-tar -xzf chatsysvisio-1.5.1.tar.gz && cd chatsysvisio-1.5.1 && bash install.sh
+sha256sum -c chatsysvisio-1.6.0.tar.gz.sha256
+tar -xzf chatsysvisio-1.6.0.tar.gz && cd chatsysvisio-1.6.0 && bash install.sh
 ```
 
 Manuel complet : **`docs/MANUEL.md`** · migration depuis l'ancien nom : **`docs/MIGRATION.md`** · détails : **`README-INSTALL.md`**. Choix techniques et limites : **`docs/ARCHITECTURE.md`**.

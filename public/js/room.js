@@ -2,6 +2,7 @@
 // chat (réponses, markdown, réactions, fichiers), participants, invitation (lien + QR local).
 import { $, $$, h, icon, api, toast, initChrome, renderSidebar, session, freshSession, ensureFresh, avatar, rememberRoom, myName, setMyName, fmtSize } from './common.js';
 import { Engine, AudioIO, detectCaps, stats } from './media.js';
+import { loadFx, saveFx, noiseSuppressionSupported } from './micfx.js';
 import { Effects, PRESETS, drawPreset } from './effects.js';
 import { renderMarkdown } from './markdown.js';
 import { L_LO, L_HI, L_SCREEN, L_HD } from './protocol.js';
@@ -21,7 +22,7 @@ const S = {
   dropped: 0,
   info: null, stream: null, video: null, effects: null, audio: null, engine: null, caps: null,
   mic: true, cam: true, quality: normalizeQuality(localStorage.getItem('cc-quality')), noHd: new Map(),
-  bg: localStorage.getItem('cc-bg') || 'none', facing: 'user',
+  bg: localStorage.getItem('cc-bg') || 'none', facing: 'user', fx: loadFx(),
   peers: new Map(), bySid: new Map(), me: null, speakerSid: 0, order: [], page: 0, pinned: null,
   tiles: new Map(), msgs: new Map(), replyTo: null, panel: !isMobile(), view: localStorage.getItem('cc-view') === 'speaker' ? 'speaker' : 'grid', tab: 'chat', unread: 0, joinedAt: 0, typing: new Map(),
 };
@@ -239,6 +240,51 @@ async function deviceSelects() {
   return wrap;
 }
 
+// ---------------- Traitement du micro (réduction de bruit, compresseur, dé-esseur) ----------------
+// Trois interrupteurs indépendants, enregistrés dans ce navigateur et appliqués à chaud (le micro n'est pas rouvert).
+const FX_ITEMS = [
+  ['ns', 'Réduction de bruit', 'Souffle, clavier, ventilation (RNNoise, calculé sur ton appareil)'],
+  ['comp', 'Compresseur', 'Voix plus régulière : les passages faibles remontent, les forts sont tenus'],
+  ['deess', 'Dé-esseur', 'Adoucit les « s » et « ch » qui sifflent (5–9 kHz)'],
+];
+async function setFx(k, on) {
+  S.fx = { ...S.fx, [k]: on }; saveFx(S.fx); paintFx();
+  const st = await S.audio?.setFx(S.fx);
+  if (k === 'ns' && on && st?.ns === 'indisponible') toast('Réduction de bruit indisponible sur ce navigateur : seule celle du navigateur reste active.', { error: true });
+  paintFx();
+}
+function fxStatus() {
+  const st = S.audio?.chain?.status, parts = [];
+  if (!S.audio?.chain) parts.push(S.engine ? 'Micro absent : réglages enregistrés.' : 'Appliqué dès que tu rejoins, puis modifiable pendant l\'appel sans coupure.');
+  if (st?.ns === 'chargement') parts.push('Chargement de la réduction de bruit…');
+  if (st?.ns === 'indisponible' || (!noiseSuppressionSupported() && S.fx.ns)) parts.push('Réduction de bruit indisponible sur ce navigateur.');
+  else if (S.fx.ns && S.audio?.chain?.nsInfo) parts.push(S.audio.chain.nsInfo);
+  const m = S.audio?.chain?.meters?.();
+  if (m && (S.fx.comp || S.fx.deess)) parts.push([S.fx.comp ? `Compression : −${m.comp.toFixed(1)} dB` : '', S.fx.deess ? `Dé-esseur : −${m.deess.toFixed(1)} dB` : ''].filter(Boolean).join(' · '));
+  return parts.join(' ');
+}
+function paintFx() {
+  $$('.tg[data-fx]').forEach(b => {
+    const k = b.dataset.fx, on = !!S.fx[k], na = S.audio?.chain?.status?.[k] === 'indisponible';
+    b.classList.toggle('on', on); b.classList.toggle('na', na); b.setAttribute('aria-checked', String(on));
+  });
+  const t = fxStatus(); $$('.fxnow').forEach(e => { if (e.textContent !== t) e.textContent = t; });
+}
+let fxTimer = 0;
+function micFxField({ label = true } = {}) {
+  const btns = FX_ITEMS.map(([k, label, desc]) => h('button', { type: 'button', class: 'tg', role: 'switch', 'aria-checked': 'false', dataset: { fx: k }, onclick: () => setFx(k, !S.fx[k]) },
+    h('span', { class: 'tgt' }, h('b', {}, label), h('small', {}, desc)), h('span', { class: 'sw', 'aria-hidden': 'true' })));
+  setTimeout(paintFx, 0);
+  // valeurs en direct (réduction de gain) tant que les interrupteurs sont affichés
+  clearInterval(fxTimer); fxTimer = setInterval(() => { if (!$('.fxnow')) { clearInterval(fxTimer); fxTimer = 0; return; } paintFx(); }, 400);
+  return h('div', { class: 'field', id: 'micFxField' }, label ? h('label', {}, 'Traitement du micro') : null,
+    h('div', { class: 'toggles fx', role: 'group', 'aria-label': 'Traitement du micro' }, btns), h('div', { class: 'fxnow', 'aria-live': 'polite' }));
+}
+function openMicFx() {
+  modal('Traitement du micro', micFxField({ label: false }),
+    h('div', { class: 'hint' }, icon('mic'), 'Tout est calculé sur ton appareil, avant le chiffrement : rien ne part vers un service extérieur. La réduction de bruit légère du navigateur reste toujours active ; l\'interrupteur ajoute RNNoise, nettement plus efficace.'));
+}
+
 // ---------------- Démarrage ----------------
 async function boot() {
   // Page restée en cache après une mise à jour du serveur : rechargement avant de rejoindre.
@@ -317,6 +363,7 @@ function renderLobby() {
     h('div', { class: 'field' }, h('label', { for: 'name' }, 'Ton nom'), h('div', { class: 'inp' }, icon('user'), nameIn), accHint),
     pwIn ? h('div', { class: 'field' }, h('label', { for: 'pw' }, 'Mot de passe'), h('div', { class: 'inp' }, icon('lock'), pwIn)) : null,
     h('div', { id: 'devices' }),
+    micFxField(),
     h('div', { class: 'field' }, h('label', {}, 'Arrière-plan'), bgPicker()),
     qualityPicker(),
     errBox, joinBtn,
@@ -350,7 +397,7 @@ async function join() {
   const btn = $('#joinBtn'), errBox = $('#joinErr');
   const name = ($('#name').value || '').trim() || 'Invité';
   // L'audio doit démarrer dans le geste utilisateur (iPhone).
-  if (!S.audio) { S.audio = new AudioIO(); S.audioReady = S.audio.init().catch(e => { stats.errors.push('audio ' + e.message); }); }
+  if (!S.audio) { S.audio = new AudioIO(); S.audio.fx = { ...S.fx }; S.audioReady = S.audio.init().catch(e => { stats.errors.push('audio ' + e.message); }); }
   btn.disabled = true; errBox.textContent = '';
   let password = $('#pw')?.value || '', pwSecret = null;
   if (S.e2 && needsPw(S.e2.mode) && !S.e2.keys) {
@@ -486,6 +533,7 @@ function moreMenu(anchor) {
   const canScreen = !!navigator.mediaDevices?.getDisplayMedia && !/iPhone|iPad|Android/i.test(navigator.userAgent);
   const pop = h('div', { class: 'popover', role: 'menu' },
     it('sparkle', 'Arrière-plan et appareils', openSettings),
+    it('mic', 'Traitement du micro', openMicFx),
     it('quality', 'Qualité vidéo : ' + QUALITY_OPTIONS.find(o => o[0] === S.quality)[1], openQuality),
     it('qr', 'Inviter (lien + QR code)', openInvite),
     it('users', 'Participants', () => togglePanel('people', true)),
@@ -508,6 +556,8 @@ function techInfo(srv) {
     ['Son du navigateur', ctx === 'running' ? 'actif' : ctx ? `${ctx} (touche la page pour l'activer)` : 'non démarré'],
     ['Codec audio', `${S.audio?.codec || '?'}${S.audio?.codec === 'opus' && st.opusMode ? ' (débit ' + st.opusMode + ')' : ''} · ${st.audioRate || '?'} Hz`],
     ['Micro', S.mic ? `ouvert · niveau ${Math.round(S.audio?.level || 0)}` : 'coupé'],
+    ['Traitement du micro', (() => { const f = st.micfx; if (!f) return 'non démarré'; const w = v => v === 'on' ? 'oui' : v === 'off' ? 'non' : v;
+      return `réduction de bruit ${w(f.ns)}${f.simd === true ? ' (SIMD)' : f.simd === false ? ' (sans SIMD)' : ''} · compresseur ${w(f.comp)} · dé-esseur ${w(f.deess)} · ${f.rate / 1000} kHz`; })()],
     ['Paquets audio envoyés', String(st.sent.audio)],
     ['Paquets audio reçus', sum(st.recv.audio) ? Object.entries(st.recv.audio).map(([k, v]) => `${name(k)} : ${v}`).join(' · ') : '0'],
     ['Paquets audio décodés', String(sum(st.decoded.audio))],
@@ -624,6 +674,7 @@ async function openSettings() {
   modal('Arrière-plan et appareils',
     h('div', { class: 'field' }, h('label', {}, 'Arrière-plan'), bgPicker()),
     await deviceSelects(),
+    micFxField(),
     qualityPicker(),
     h('div', { class: 'hint' }, icon('sparkle'), 'Le détourage tourne sur ton appareil (modèle hébergé sur ton serveur). Il se coupe tout seul si l\'appareil est trop lent.'));
   refreshBgButtons();

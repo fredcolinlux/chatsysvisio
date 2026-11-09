@@ -12,7 +12,7 @@ connexion HTTPS/WebSocket que Nginx Proxy Manager (NPM) relaie vers le CT. Pas d
 ## 2. Installation
 
 **Paquet autonome (recommandé, hors ligne)** : `chatsysvisio-<version>.tar.gz` contient Node.js 24 officiel (x64 + arm64,
-SHA256 vérifié), les dépendances, MediaPipe et la police : `tar -xzf chatsysvisio-1.5.1.tar.gz && cd chatsysvisio-1.5.1 && bash install.sh`.
+SHA256 vérifié), les dépendances, MediaPipe et la police : `tar -xzf chatsysvisio-1.6.0.tar.gz && cd chatsysvisio-1.6.0 && bash install.sh`.
 Aucun paquet n'est téléchargé (`USE_SYSTEM_NODE=1` pour utiliser `nodejs` de Debian à la place). Pas à pas : `docs/MANUEL.md`.
 
 Archives classiques (Node.js des dépôts Debian) :

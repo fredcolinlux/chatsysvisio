@@ -9,7 +9,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; OUT=$(cd "${1:-$ROOT/..}" && pwd)
 cd "$ROOT"
-[ -f public/vendor/mediapipe/vision_bundle.mjs ] || node scripts/vendor.mjs
+[ -f public/vendor/mediapipe/vision_bundle.mjs ] && [ -f public/vendor/rnnoise/rnnoise-worklet.js ] || node scripts/vendor.mjs
 [ -f node_modules/ws/package.json ] || npm ci --omit=dev
 V=$(cat VERSION)
 B=$(cat BUILD 2>/dev/null || echo 0); [[ "$B" =~ ^[0-9]+$ ]] || { echo "BUILD invalide : $B" >&2; exit 1; }
