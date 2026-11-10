@@ -333,13 +333,13 @@ autres (et les leurs pour lui) → « pas de son » jusqu'à Ctrl+F5. Correctifs
   les deux sens, en salon chiffré et public, micro coupé = silence ; Chromium et Edge, et Chrome ↔ WebKit/Firefox dans
   `navigateurs.spec.mjs`. Panneau « Infos techniques » (menu « … ») avec les compteurs audio.
 
-## Traitement du micro (1.6, autotune 1.8)
+## Traitement du micro (1.6, autotune 1.8, isolateur 1.9)
 
 - Chaîne Web Audio dans le même `AudioContext` que la capture (`public/js/micfx.js`) :
-  `MediaStreamSource → [RNNoise] → [autotune] → [DynamicsCompressor + gain +2 dB] → [dé-esseur] → cc-capture → Opus`.
+  `MediaStreamSource → [isolateur DeepFilterNet3 OU RNNoise] → [autotune] → [DynamicsCompressor + gain +2 dB] → [dé-esseur] → cc-capture → Opus`.
   Chaque interrupteur recâble les nœuds (`MicChain.set`) : le micro n'est pas rouvert, l'appel continue. Réglages dans
-  `localStorage['csv-micfx']` (`{ ns, comp, deess, tune, tuneSpeed, tuneKey, tuneMinor }`, tous coupés par défaut ;
-  un ancien réglage à trois clés reste lu).
+  `localStorage['csv-micfx']` (`{ ns, comp, deess, tune, tuneSpeed, tuneKey, tuneMinor, iso, isoLevel }`, tous coupés
+  par défaut, `isoLevel` 60 ; un ancien réglage à trois ou quatre clés reste lu).
 - **Réduction de bruit** : RNNoise (BSD-3-Clause) compilé en wasm par `@shiguredo/rnnoise-wasm` (Apache-2.0), worklet
   de `@sapphi-red/web-noise-suppressor` (MIT), copiés par `scripts/vendor.mjs` dans `public/vendor/rnnoise/` avec leurs
   licences (`docs/licences/`). Version SIMD si le navigateur la valide, sinon version simple. Le binaire est téléchargé
@@ -367,12 +367,48 @@ autres (et les leurs pour lui) → « pas de son » jusqu'à Ctrl+F5. Correctifs
     dé-esseur reste en dernier.
   - Le worklet poste `{ voiced, hz, note, target, cents }` environ 10 fois par seconde, pour l'affichage en direct.
   - Sans AudioWorklet, ou si le module est refusé : état « indisponible », le son passe sans correction.
+- **Isolateur de voix** (1.9 ; `public/js/isolateur.js`, worklet `cc-isolateur`, liaison `public/js/df-glue.js`).
+  - *Choix* : DeepFilterNet3 (code et poids MIT OU Apache-2.0), compilé en wasm SIMD par `@lofcz/deepfilternet-web`
+    (moteur tract 0.23, poids intégrés au wasm : 34,1 Mo bruts, **10,7 Mo en brotli**, 12,7 Mo en gzip). Écartés : la
+    version wasm de libDF d'origine avec ONNX séparé (14,6 + 8 Mo, 2,3 fois plus lente), les paquets qui chargent depuis
+    un CDN, un modèle de séparation voix / musique (non temps réel, centaines de Mo), et la contrainte native
+    `voiceIsolation` de `getUserMedia` (quasi absente en pratique ; Safari l'ignore) : elle sert seulement de repli si
+    `getCapabilities().voiceIsolation` la propose et que le modèle est indisponible.
+  - *Téléchargement* : seulement quand l'interrupteur est allumé, depuis le serveur lui-même (`/vendor/deepfilter/`).
+    `info.json` donne la taille, d'où la barre de progression ; puis `WebAssembly.compile` dans la page et passage du
+    module compilé au worklet (`processorOptions` ; à défaut les octets, compilés dans le worklet). Le serveur envoie
+    `df_bg.wasm.br` ou `.gz` selon `Accept-Encoding` (`Vary`, ETag par codage ; décompression à la volée sinon). Le wasm
+    brut n'est pas livré. CSP inchangée : `'wasm-unsafe-eval'` reste limité à la page d'appel.
+  - *Cadrage* : blocs de 128 échantillons → trames DeepFilterNet de 480 (10 ms) par une file. À 48 kHz : retard du modèle
+    1 440 + tampon fixe 448 = 1 888 échantillons = **39,3 ms**. À 44,1 kHz : rééchantillonnage d'Hermite vers 48 kHz et
+    retour, 1 770 échantillons = **40,1 ms**. Le retard est constant (aucune dérive) et annoncé dans `isoLatencyMs`.
+  - *Porte de proximité* (après le modèle, par trame de 10 ms) : un niveau de référence suit les crêtes de la voix
+    principale (montée rapide, descente 0,5 dB/s). Une trame plus faible que la référence de plus de `16 − 10·l` dB est
+    atténuée jusqu'à `30·l` dB (genou de 6 dB). La porte reste ouverte 120 ms après une trame forte ; lissage à
+    l'échantillon (attaque 3 ms, relâchement 70 ms). L'atténuation maximale du modèle vaut `12 + 48·l` dB (l = intensité / 100).
+  - *Ce que cela fait vraiment* : DeepFilterNet garde **toute** parole, sans savoir qui parle. La porte retire les voix
+    plus faibles (lointaines, réverbérées, télé) **pendant tes pauses**. Quand tu parles, elle est ouverte : une voix du
+    fond passe alors, réduite seulement par le masquage. Pour retirer une autre voix aussi forte que la tienne, il faudrait
+    un modèle de locuteur cible (empreinte de ta voix), ce qui n'est pas disponible sous forme libre, légère et temps réel.
+  - *Avec la réduction de bruit* : l'isolateur la remplace (DeepFilterNet réduit déjà le bruit). RNNoise est mis en
+    pause (état `inclus`), sans double traitement, et reprend si l'isolateur est coupé ou en échec. Pendant le
+    téléchargement, RNNoise continue de fonctionner.
+  - *Ordre* : en premier, car le modèle a besoin du signal brut du micro. Avant l'autotune, pour que YIN voie une voix
+    propre. Avant le compresseur, qui sinon remonterait le fond juste avant qu'on le retire.
+  - *Surcharge* : si la charge du fil audio dépasse 85 % sur deux fenêtres de 2 s, l'isolateur passe en dérivation
+    (signal retardé d'autant, sans saut), avec le message « appareil trop lent » ; repli sur `voiceIsolation` natif si
+    le navigateur le propose. Sans SIMD, AudioWorklet ou wasm : état « indisponible », le son passe sans isolation.
+  - Le worklet poste `{ gateDb, load, underruns, bypass }` environ 4 fois par seconde.
+  - Démarrage du modèle sur le fil audio : ≈ 0,3 à 0,5 s, une seule fois par appel, avec un petit accroc audible possible.
 - Tests :
+  - `test/unit/isolateur.test.mjs` : DeepFilterNet3 réel sur des mélanges de synthèse (voix + musique, voix + voix
+    lointaine, voix + bruit rose), latence exacte, rééchantillonnage, porte, CPU ;
   - `test/unit/micfx.test.mjs` et `test/unit/autotune.test.mjs` (DSP : 450 → 440 Hz, gammes, durée, bruit intact,
     voix de synthèse `scripts/voix-synthese.mjs`, CPU) ;
   - `test/e2e/micfx.spec.mjs` : mesure du signal par rendu hors ligne dans la page d'appel, interrupteurs,
-    application à chaud, note en direct avec un micro factice « chanteur », replis ;
-  - `navigateurs.spec.mjs` : la même mesure dans Firefox et WebKit.
+    application à chaud, note en direct avec un micro factice « chanteur », isolateur (indicateur de chargement,
+    `inclus`, micro factice « qui parle », repli si le modèle ne se télécharge pas) ;
+  - `navigateurs.spec.mjs` : les mêmes mesures dans Firefox et WebKit, à 48 et 44,1 kHz.
 - Coût : `scripts/micfx-bench.mjs`.
 
 ## « Vu » et tableau blanc (1.7)

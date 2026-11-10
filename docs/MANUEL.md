@@ -1,6 +1,6 @@
 # ChatSysVisio — Manuel d'installation et d'utilisation
 
-*Version 1.8.0 · licence AGPL-3.0-or-later · fork de Camus*
+*Version 1.9.0 · licence AGPL-3.0-or-later · fork de Camus*
 
 ![Accueil](img/accueil-bureau.png)
 
@@ -205,21 +205,24 @@ Pour atteindre le CT depuis Internet, passez par un VPN ou un bastion : n'expose
 Aperçu caméra, niveau du micro, choix de la caméra, du micro et du haut-parleur, **traitement du micro**, **flou** ou
 **arrière-plan** (images fournies ou la vôtre), puis **Rejoindre**.
 
-### Traitement du micro (1.6, autotune 1.8)
+### Traitement du micro (1.6, autotune 1.8, isolateur de voix 1.9)
 
-Quatre interrupteurs **indépendants**, sous « Traitement du micro » : dans la salle d'attente, et pendant l'appel par le
+Cinq interrupteurs **indépendants**, sous « Traitement du micro » : dans la salle d'attente, et pendant l'appel par le
 menu « … » → **Traitement du micro** (ou « Arrière-plan et appareils »). Ils sont enregistrés dans le navigateur et
 s'appliquent **à chaud**, sans couper le micro ni l'appel. Tous sont coupés par défaut.
 
 | Réglage | Effet | Quand l'activer |
 |---|---|---|
 | **Réduction de bruit** | RNNoise (réseau de neurones de Xiph/Mozilla, WebAssembly exécuté sur l'appareil) : retire souffle, ventilation, clavier, bruit de rue. Mesuré : bruit large bande −21 dB, voix conservée | pièce bruyante, PC portable qui ventile |
+| **Isolateur de voix** (1.9) | garde **ta voix** et retire musique, télé, bruits et la plupart des voix en arrière-plan **pendant tes pauses** (voir ci-dessous). Inclut la réduction de bruit | musique ou télé dans la pièce, open space, café |
 | **Autotune** (1.8) | ramène le chant sur la note juste la plus proche (voir ci-dessous). Hors voix chantée (silence, bruit, consonnes), le son passe intact | chanter, karaoké, effet « robot » |
 | **Compresseur** | rapproche les passages faibles et forts (seuil −26 dB, ratio 4:1, attaque 4 ms, relâchement 180 ms, compensation +2 dB) | voix qui varie, on s'éloigne du micro |
 | **Dé-esseur** | atténue seulement la bande 5–9 kHz quand elle domine (jusqu'à −14 dB) : les « s » et « ch » sifflants. Hors sifflante, le son est intact | micro-casque ou micro très brillant |
 
-Chaîne : micro → réduction de bruit → **autotune** → compresseur → dé-esseur → encodeur Opus (puis chiffrement de bout
-en bout). Tout est calculé localement : rien ne part vers un service extérieur. La réduction de bruit **légère** du navigateur
+Chaîne : micro → **isolateur de voix** *ou* réduction de bruit → **autotune** → compresseur → dé-esseur → encodeur Opus
+(puis chiffrement de bout en bout). Si l'isolateur et la réduction de bruit sont allumés tous les deux, l'isolateur
+**remplace** RNNoise : il réduit déjà le bruit, donc il n'y a pas de double traitement. La réduction de bruit affiche
+alors « incluse dans l'isolateur ». Elle reprend toute seule si l'isolateur est coupé ou indisponible. Tout est calculé localement : rien ne part vers un service extérieur. La réduction de bruit **légère** du navigateur
 (`noiseSuppression` de getUserMedia, avec l'annulation d'écho) reste toujours active ; l'interrupteur ajoute RNNoise,
 bien plus efficace. Sous les interrupteurs, la réduction en cours s'affiche en direct (« Compression : −4,0 dB »).
 « Infos techniques » indique l'état réel de chaque étage.
@@ -228,18 +231,78 @@ bien plus efficace. Sous les interrupteurs, la réduction en cours s'affiche en 
 
 **Pourquoi cet ordre ?**
 
-- La **réduction de bruit** vient en premier : chaque étage suivant travaille sur une voix propre.
+- L'**isolateur** (ou la réduction de bruit) vient en premier. Le modèle a besoin du son brut du micro, et chaque étage
+  suivant travaille ensuite sur une voix propre. Placé après le compresseur, il recevrait un fond déjà remonté par
+  celui-ci.
 - L'**autotune** vient juste après. Il détecte la hauteur bien mieux sur une voix débruitée (le souffle et la
   ventilation brouillent la période). Il passe aussi **avant le compresseur** : les variations de gain du compresseur
   ne perturbent pas la détection, et le compresseur égalise ensuite le niveau du chant corrigé.
 - Le **dé-esseur** vient en dernier. Il traite les sifflantes qui restent, y compris celles que le compresseur a fait
   ressortir, juste avant l'encodeur.
 
-Coût processeur (mesuré sur PC, `node scripts/micfx-bench.mjs`) : réduction de bruit ≈ 1,6 % d'un cœur, autotune
-≈ 1,6 % (voix chantée en continu, cas le plus coûteux), compresseur 0,4 %, dé-esseur 0,2 %, les quatre ensemble
-≈ 3,3 %. Sur téléphone, comptez quelques % d'un cœur (estimation). Limites : RNNoise est prévu pour 48 kHz ; si le
+Coût processeur (mesuré sur PC, `node scripts/micfx-bench.mjs`, Chrome) : réduction de bruit ≈ 1,5 % d'un cœur,
+autotune ≈ 1,3 % (voix chantée en continu, cas le plus coûteux), compresseur 0,3 %, dé-esseur 0,2 %, les quatre
+ensemble ≈ 3,2 %, **isolateur ≈ 3,4 %**, les cinq ensemble ≈ 3,6 % (Firefox 3,5 / 4,3 %, Safari-WebKit 3,1 / 3,7 %).
+Sur téléphone, comptez quelques % d'un cœur pour les quatre premiers, et environ 10 à 20 % d'un cœur pour l'isolateur
+(estimation, non mesurée sur un appareil réel). Limites : RNNoise est prévu pour 48 kHz ; si le
 navigateur tourne à 44,1 kHz (certains Mac, Firefox), l'effet est un peu moindre et c'est signalé. Sans WebAssembly,
 l'interrupteur de la réduction de bruit affiche « indisponible », et les autres étages continuent de fonctionner.
+
+#### Isolateur de voix (1.9)
+
+Allumez **Isolateur de voix** : le réglage **Intensité** apparaît dessous, de **0 · légère** à **100 · forte**
+(60 par défaut). Il est enregistré dans le navigateur et s'applique à chaud.
+
+Le modèle est **DeepFilterNet3**, un réseau de neurones libre (MIT / Apache-2.0) exécuté **sur l'appareil** en
+WebAssembly. Il se télécharge **une seule fois** depuis votre propre serveur (≈ 10,7 Mo compressés en brotli, 12,7 Mo
+en gzip, sans CDN), et seulement si l'interrupteur est allumé. La ligne sous le réglage indique où il en est :
+
+| Message | Signification |
+|---|---|
+| « Le modèle (≈ 11 Mo, une seule fois) se télécharge quand tu rejoins l'appel. » | salle d'attente, rien n'est encore chargé |
+| « Téléchargement du modèle… 42 % (une seule fois) » + barre de progression | téléchargement en cours ; la réduction de bruit (si allumée) fonctionne pendant ce temps |
+| « Préparation du modèle… » puis « Démarrage du modèle… » | compilation puis démarrage (≈ 0,5 s) |
+| « Actif · 39 ms de latence · voix de second plan −18 dB · réduction de bruit incluse » | en marche ; la valeur en dB indique ce que la porte retire à cet instant |
+| « Isolateur indisponible : … Le son passe sans isolation. » | navigateur sans WebAssembly SIMD, téléchargement impossible ou appareil trop lent |
+
+![Isolateur de voix](img/isolateur.png)
+
+<img src="img/isolateur-mobile.png" alt="Isolateur de voix sur mobile" width="300">
+
+Ce qu'il fait **vraiment** :
+
+- **Musique, télé, bruits** (ventilation, clavier, vaisselle, rue) : retirés presque entièrement. Mesuré sur des
+  mélanges de synthèse : musique −37 à −39 dB pendant vos pauses, et votre voix ressort à son niveau (écart < 0,1 dB).
+- **Autres voix** : le modèle garde *toute* parole, car il ne sait pas *qui* parle. Une **porte de proximité** s'y
+  ajoute. Elle suit le niveau de **votre** voix, la plus forte puisque vous êtes près du micro, et atténue pendant vos
+  pauses ce qui est nettement plus faible : collègue à l'autre bout de la pièce, télé, voix réverbérée. Mesuré :
+  voix lointaine −25 à −35 dB dans les pauses quand elle est réverbérée, et pour une voix sèche 14 dB plus faible que
+  la vôtre −4 / −10 / −21 dB selon l'intensité 0 / 60 / 100.
+- **Pendant que vous parlez**, la porte reste ouverte. Une voix derrière vous passe alors en même temps que la vôtre,
+  seulement un peu masquée.
+- Une personne **juste à côté de vous**, qui parle aussi fort que vous, n'est pas retirée. Il faudrait un modèle qui
+  reconnaisse votre voix (« locuteur cible »), et il n'en existe pas aujourd'hui sous forme libre, légère et en temps
+  réel dans un navigateur.
+
+Plus l'intensité est forte, plus le fond est retiré, mais plus les fins de mots très douces de votre voix risquent
+d'être coupées : à 100, environ 9 % de vos trames de parole sont atténuées de plus de 3 dB, contre 7 % pour le modèle
+seul. 60 est un bon compromis.
+
+Latence ajoutée : **39 ms** à 48 kHz (40 ms à 44,1 kHz), fixe et mesurée dans Chrome, Firefox et Safari (WebKit). Elle
+remplace les ≈ 27 ms de RNNoise quand les deux sont allumés.
+
+Limites :
+
+- au démarrage du modèle (une fois par appel), un petit accroc de son d'environ 0,5 s est possible ;
+- un téléphone ancien peut être trop lent. L'isolateur se met alors en pause tout seul (« appareil trop lent »), le
+  son passe sans isolation, et l'isolation native du navigateur est utilisée si l'appareil en propose une ;
+- il faut un navigateur avec WebAssembly SIMD : Chrome / Edge 91+, Firefox 89+, Safari 16.4+ (iPhone iOS 16.4+) ;
+- **chant** : le modèle est entraîné sur la parole. Il peut prendre une note longue et tenue pour un bruit et la
+  retirer. Sur la voix chantée de synthèse des tests, c'est −12 dB à l'intensité 0 et presque tout à 60 ; une vraie voix
+  n'a pas été testée. **Pour chanter (autotune), coupez l'isolateur** et gardez la réduction de bruit. Un avertissement
+  s'affiche quand les deux sont allumés ;
+- extrait d'écoute : `isolateur-demo-avant.wav` / `isolateur-demo-apres.wav`, une voix de synthèse avec de la musique
+  puis une voix lointaine, sans aucun enregistrement réel.
 
 #### Autotune (1.8)
 
@@ -349,7 +412,7 @@ par personne pour protéger le serveur.
 | Épingler, plein écran, image dans l'image | menu d'une vignette |
 | Qualité (Auto, 360p, 720p, **1080p**, Éco) | menu « … » → Qualité vidéo |
 | Flou / arrière-plan, appareils | menu « … » → Arrière-plan et appareils |
-| Réduction de bruit, **autotune**, compresseur, dé-esseur | menu « … » → Traitement du micro |
+| Réduction de bruit, **isolateur de voix**, **autotune**, compresseur, dé-esseur | menu « … » → Traitement du micro |
 | Infos techniques (diagnostic) | menu « … » |
 | Inviter (lien, QR) | bouton Inviter |
 
@@ -401,12 +464,14 @@ Un code de secours remplace une fois le code TOTP à la connexion.
 tar -xzf chatsysvisio-<version>.tar.gz && cd chatsysvisio-<version> && bash update.sh
 ```
 
-Ou avec l'archive de **mise à jour** (même code, sans les tests), par exemple pour passer de 1.6.0 ou 1.7.0 à 1.8.0 :
+Ou avec l'archive de **mise à jour** (même code, sans les tests), par exemple pour passer de 1.6.0, 1.7.0 ou 1.8.0 à 1.9.0 :
 
 ```bash
-sha256sum -c chatsysvisio-mise-a-jour-1.8.0-b4.tar.gz.sha256
-tar -xzf chatsysvisio-mise-a-jour-1.8.0-b4.tar.gz && cd chatsysvisio-maj && bash update.sh
+sha256sum -c chatsysvisio-mise-a-jour-1.9.0-b5.tar.gz.sha256
+tar -xzf chatsysvisio-mise-a-jour-1.9.0-b5.tar.gz && cd chatsysvisio-maj && bash update.sh
 ```
+
+L'archive 1.9.0 contient déjà le modèle de l'isolateur, précompressé : le serveur n'a rien à télécharger de plus.
 
 `update.sh` sauvegarde d'abord (`/var/backups/chatsysvisio/chatsysvisio-maj-DATE.tar.gz`), garde l'ancien code dans
 `/opt/chatsysvisio.prev` et revient automatiquement en arrière si la nouvelle version ne démarre pas. Ensuite, chaque
