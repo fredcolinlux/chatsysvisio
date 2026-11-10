@@ -19,6 +19,7 @@ pages, API, video and audio all go through WebSocket — no UDP, no TURN server.
 - WebCodecs video up to **1080p** (VP8 / H.264, JPEG fallback), speaker view, screen sharing, picture-in-picture.
 - Background **blur / replacement** (MediaPipe, in the browser), chat with Markdown, reactions, files and images.
 - **Microphone processing** (1.6): noise suppression (RNNoise, WebAssembly, local), compressor and de-esser, each switchable on its own, applied live.
+- **Autotune** (1.8): pulls singing to the nearest note (chromatic or a major / minor key), correction speed from natural to “robot”, live note display; computed on the device, 13 ms latency, sound untouched outside sung voice.
 - **Shared whiteboard** (1.7): sketch together, shown to everyone like a screen share; pen with pressure, shapes, eraser, per-person undo, PNG export, owner lock; vector strokes, end-to-end encrypted in private rooms.
 - **Read receipts** (1.7): “Vu par …” under your own messages, sent only when the message was really on screen.
 - Installable PWA, dark / light themes, mobile layout, QR-code invitations generated locally.
@@ -35,8 +36,8 @@ The release archive bundles the code, its dependencies, the Inter font, MediaPip
 **Node.js 24** build (linux-x64 and linux-arm64, SHA256-checked). No network access is needed during installation.
 
 ```bash
-sha256sum -c chatsysvisio-1.7.0.tar.gz.sha256
-tar -xzf chatsysvisio-1.7.0.tar.gz && cd chatsysvisio-1.7.0
+sha256sum -c chatsysvisio-1.8.0.tar.gz.sha256
+tar -xzf chatsysvisio-1.8.0.tar.gz && cd chatsysvisio-1.8.0
 sudo bash install.sh        # asks for the public URL and the reverse proxy IP
 ```
 

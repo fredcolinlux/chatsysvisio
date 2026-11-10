@@ -415,12 +415,12 @@ export class AudioIO {
     if (!this.analyser) return 0;
     this.analyser.getFloatTimeDomainData(this._abuf); let e = 0; for (const x of this._abuf) e = Math.max(e, Math.abs(x)); return e;
   }
-  // Interrupteurs du micro ({ ns, comp, deess }) : appliqués à chaud ; renvoie l'état effectif.
+  // Interrupteurs du micro ({ ns, tune, comp, deess } + réglages de l'autotune) : appliqués à chaud ; renvoie l'état effectif.
   async setFx(fx) {
     this.fx = { ...fx };
     if (!this.chain) return null;
     const st = await this.chain.set(this.fx);
-    stats.micfx = { ...st, rate: this.ctx.sampleRate, simd: this.chain.ns?.simd ?? null };
+    stats.micfx = { ...st, rate: this.ctx.sampleRate, simd: this.chain.ns?.simd ?? null, tuneMs: this.chain.tuneLatencyMs };
     return st;
   }
   get running() { return this.ctx?.state === 'running'; }

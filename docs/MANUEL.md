@@ -1,6 +1,6 @@
 # ChatSysVisio — Manuel d'installation et d'utilisation
 
-*Version 1.7.0 · licence AGPL-3.0-or-later · fork de Camus*
+*Version 1.8.0 · licence AGPL-3.0-or-later · fork de Camus*
 
 ![Accueil](img/accueil-bureau.png)
 
@@ -20,7 +20,7 @@ Fonctions principales :
 - mosaïque paginée ou **mode orateur**, partage d'écran, **tableau blanc partagé** (croquis à plusieurs), plein écran,
   image dans l'image ;
 - **flou** et **arrière-plans** (détourage MediaPipe exécuté dans le navigateur) ;
-- **traitement du micro** : réduction de bruit (RNNoise), compresseur et dé-esseur, activables séparément ;
+- **traitement du micro** : réduction de bruit (RNNoise), **autotune**, compresseur et dé-esseur, activables séparément ;
 - chat : réponses, Markdown, réactions, **fichiers et images**, « … écrit », **« Vu »** (accusés de lecture) ; main levée,
   réactions ;
 - invitation par lien ou **QR code** (généré localement), appli installable (PWA), thème sombre / clair, mobile ;
@@ -205,30 +205,83 @@ Pour atteindre le CT depuis Internet, passez par un VPN ou un bastion : n'expose
 Aperçu caméra, niveau du micro, choix de la caméra, du micro et du haut-parleur, **traitement du micro**, **flou** ou
 **arrière-plan** (images fournies ou la vôtre), puis **Rejoindre**.
 
-### Traitement du micro (1.6)
+### Traitement du micro (1.6, autotune 1.8)
 
-Trois interrupteurs **indépendants**, sous « Traitement du micro » : dans la salle d'attente, et pendant l'appel par le
+Quatre interrupteurs **indépendants**, sous « Traitement du micro » : dans la salle d'attente, et pendant l'appel par le
 menu « … » → **Traitement du micro** (ou « Arrière-plan et appareils »). Ils sont enregistrés dans le navigateur et
 s'appliquent **à chaud**, sans couper le micro ni l'appel. Tous sont coupés par défaut.
 
 | Réglage | Effet | Quand l'activer |
 |---|---|---|
 | **Réduction de bruit** | RNNoise (réseau de neurones de Xiph/Mozilla, WebAssembly exécuté sur l'appareil) : retire souffle, ventilation, clavier, bruit de rue. Mesuré : bruit large bande −21 dB, voix conservée | pièce bruyante, PC portable qui ventile |
+| **Autotune** (1.8) | ramène le chant sur la note juste la plus proche (voir ci-dessous). Hors voix chantée (silence, bruit, consonnes), le son passe intact | chanter, karaoké, effet « robot » |
 | **Compresseur** | rapproche les passages faibles et forts (seuil −26 dB, ratio 4:1, attaque 4 ms, relâchement 180 ms, compensation +2 dB) | voix qui varie, on s'éloigne du micro |
 | **Dé-esseur** | atténue seulement la bande 5–9 kHz quand elle domine (jusqu'à −14 dB) : les « s » et « ch » sifflants. Hors sifflante, le son est intact | micro-casque ou micro très brillant |
 
-Chaîne : micro → réduction de bruit → compresseur → dé-esseur → encodeur Opus (puis chiffrement de bout en bout).
-Tout est calculé localement : rien ne part vers un service extérieur. La réduction de bruit **légère** du navigateur
+Chaîne : micro → réduction de bruit → **autotune** → compresseur → dé-esseur → encodeur Opus (puis chiffrement de bout
+en bout). Tout est calculé localement : rien ne part vers un service extérieur. La réduction de bruit **légère** du navigateur
 (`noiseSuppression` de getUserMedia, avec l'annulation d'écho) reste toujours active ; l'interrupteur ajoute RNNoise,
 bien plus efficace. Sous les interrupteurs, la réduction en cours s'affiche en direct (« Compression : −4,0 dB »).
 « Infos techniques » indique l'état réel de chaque étage.
 
 ![Traitement du micro](img/micro-traitement.png)
 
-Coût processeur (mesuré sur PC, `node scripts/micfx-bench.mjs`) : réduction de bruit ≈ 1,6 % d'un cœur, compresseur
-0,4 %, dé-esseur 0,2 %. Sur téléphone, comptez quelques % d'un cœur (estimation). Limites : RNNoise est prévu pour
-48 kHz ; si le navigateur tourne à 44,1 kHz (certains Mac, Firefox), l'effet est un peu moindre et c'est signalé. Sans
-WebAssembly, l'interrupteur affiche « indisponible » et le compresseur et le dé-esseur continuent de fonctionner.
+**Pourquoi cet ordre ?**
+
+- La **réduction de bruit** vient en premier : chaque étage suivant travaille sur une voix propre.
+- L'**autotune** vient juste après. Il détecte la hauteur bien mieux sur une voix débruitée (le souffle et la
+  ventilation brouillent la période). Il passe aussi **avant le compresseur** : les variations de gain du compresseur
+  ne perturbent pas la détection, et le compresseur égalise ensuite le niveau du chant corrigé.
+- Le **dé-esseur** vient en dernier. Il traite les sifflantes qui restent, y compris celles que le compresseur a fait
+  ressortir, juste avant l'encodeur.
+
+Coût processeur (mesuré sur PC, `node scripts/micfx-bench.mjs`) : réduction de bruit ≈ 1,6 % d'un cœur, autotune
+≈ 1,6 % (voix chantée en continu, cas le plus coûteux), compresseur 0,4 %, dé-esseur 0,2 %, les quatre ensemble
+≈ 3,3 %. Sur téléphone, comptez quelques % d'un cœur (estimation). Limites : RNNoise est prévu pour 48 kHz ; si le
+navigateur tourne à 44,1 kHz (certains Mac, Firefox), l'effet est un peu moindre et c'est signalé. Sans WebAssembly,
+l'interrupteur de la réduction de bruit affiche « indisponible », et les autres étages continuent de fonctionner.
+
+#### Autotune (1.8)
+
+Allumez **Autotune** : ses réglages apparaissent juste en dessous. Quand il est coupé, ils sont masqués.
+
+| Réglage | Effet |
+|---|---|
+| **Vitesse de correction** | de **0 · naturelle** (la note glisse doucement vers la note juste, le vibrato est conservé) à **100 · robot** (saut instantané d'une note à l'autre, l'effet « T-Pain »). 50 par défaut |
+| **Tonalité** | **Chromatique** (par défaut : les 12 notes) ou une tonique de **Do** à **Si** |
+| **Majeur / Mineur** | gamme utilisée quand une tonalité est choisie (masqué en chromatique) |
+
+Pendant l'appel, la ligne sous les réglages affiche **en direct** la note chantée, la note visée et la correction
+appliquée, par exemple « Sol♯ 3 → La 3 · 431 Hz · correction +38 cents ». Les notes sont nommées à la française
+(La 3 = 440 Hz). Les réglages s'appliquent à chaud et sont enregistrés dans le navigateur avec les interrupteurs.
+
+![Autotune](img/autotune.png)
+
+![Autotune sur mobile](img/autotune-mobile.png)
+
+Fonctionnement :
+
+- la hauteur est détectée par la méthode **YIN**, sur le son sous-échantillonné, toutes les 5 ms ;
+- la voix est transposée **sans changer sa durée**, par fenêtres calées sur la période de la voix (famille PSOLA) ;
+- hors voix chantée (silence, bruit, souffle, consonnes « s », « f », « ch »), le son ressort **à l'identique**,
+  seulement retardé : aucun artefact ;
+- latence ajoutée : **13 ms**, fixe, mesurée dans Chrome, Firefox et Safari (WebKit) ;
+- tout est calculé sur l'appareil (AudioWorklet servi par le serveur, sans CDN, CSP inchangée), sur PC comme sur
+  Android et iPhone.
+
+Mesures : une sinusoïde à 450 Hz ressort à 440,00 Hz en chromatique, et une à 470 Hz ressort à 493,88 Hz (Si) en
+Do majeur. Sur la voix de synthèse de démonstration, chantée faux de 36 cents en moyenne, l'écart tombe à 0,4 cent
+en mode robot.
+
+Limites :
+
+- l'autotune suit **une seule voix** : deux personnes qui chantent ensemble, ou un instrument derrière, le font
+  hésiter. Il laisse alors passer le son sans le corriger ;
+- plage de 70 à 1 000 Hz, environ du Ré 1 au Si 5 ;
+- une voix très soufflée ou chuchotée n'est pas corrigée, car elle n'a pas de hauteur ;
+- au-delà d'environ 3 demi-tons de correction, le timbre change un peu (les formants suivent la transposition) ;
+- sans AudioWorklet (navigateur très ancien), l'interrupteur affiche « indisponible » et le son passe sans
+  correction. Les navigateurs actuels le gèrent tous.
 
 ### « Vu » dans le chat (1.7)
 
@@ -296,7 +349,7 @@ par personne pour protéger le serveur.
 | Épingler, plein écran, image dans l'image | menu d'une vignette |
 | Qualité (Auto, 360p, 720p, **1080p**, Éco) | menu « … » → Qualité vidéo |
 | Flou / arrière-plan, appareils | menu « … » → Arrière-plan et appareils |
-| Réduction de bruit, compresseur, dé-esseur | menu « … » → Traitement du micro |
+| Réduction de bruit, **autotune**, compresseur, dé-esseur | menu « … » → Traitement du micro |
 | Infos techniques (diagnostic) | menu « … » |
 | Inviter (lien, QR) | bouton Inviter |
 
@@ -348,11 +401,11 @@ Un code de secours remplace une fois le code TOTP à la connexion.
 tar -xzf chatsysvisio-<version>.tar.gz && cd chatsysvisio-<version> && bash update.sh
 ```
 
-Ou avec l'archive de **mise à jour** (même code, sans les tests), par exemple pour passer de 1.6.0 à 1.7.0 :
+Ou avec l'archive de **mise à jour** (même code, sans les tests), par exemple pour passer de 1.6.0 ou 1.7.0 à 1.8.0 :
 
 ```bash
-sha256sum -c chatsysvisio-mise-a-jour-1.7.0-b3.tar.gz.sha256
-tar -xzf chatsysvisio-mise-a-jour-1.7.0-b3.tar.gz && cd chatsysvisio-maj && bash update.sh
+sha256sum -c chatsysvisio-mise-a-jour-1.8.0-b4.tar.gz.sha256
+tar -xzf chatsysvisio-mise-a-jour-1.8.0-b4.tar.gz && cd chatsysvisio-maj && bash update.sh
 ```
 
 `update.sh` sauvegarde d'abord (`/var/backups/chatsysvisio/chatsysvisio-maj-DATE.tar.gz`), garde l'ancien code dans

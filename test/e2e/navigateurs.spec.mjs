@@ -1,7 +1,7 @@
 // WebKit (moteur de Safari / iPhone) et Firefox face à Chrome, dans le même salon, via le seul port HTTP(S).
 import { test, expect, chromium } from '@playwright/test';
 import fs from 'node:fs';
-import { createRoom, joinRoom, waitMedia, withQuery, expectAudible, measureMicFx } from './helpers.mjs';
+import { createRoom, joinRoom, waitMedia, withQuery, expectAudible, measureMicFx, measureTune } from './helpers.mjs';
 
 const chromeOpts = {
   executablePath: fs.existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : undefined,
@@ -71,8 +71,8 @@ test('traitement du micro : réduction de bruit, dé-esseur et compresseur actif
   expect(nz.st.ns).toBe('on'); expect(nz.outDb - nz.inDb).toBeLessThan(-10);
   expect(s.outDb - s.inDb).toBeLessThan(-6); expect(q.outDb - q.inDb).toBeGreaterThan(4);
   await w.evaluate(() => localStorage.setItem('csv-micfx', JSON.stringify({ ns: true, comp: true, deess: true })));
-  await w.evaluate(() => window.__ccState.audio.setFx({ ns: true, comp: true, deess: true }));
-  await expect.poll(() => w.evaluate(() => ({ ...window.__ccState.audio.chain.status })), { timeout: 10_000 }).toEqual({ ns: 'on', comp: 'on', deess: 'on' });
+  await w.evaluate(() => window.__ccState.audio.setFx({ ns: true, tune: true, tuneSpeed: 50, tuneKey: -1, tuneMinor: false, comp: true, deess: true }));
+  await expect.poll(() => w.evaluate(() => ({ ...window.__ccState.audio.chain.status })), { timeout: 10_000 }).toEqual({ ns: 'on', tune: 'on', comp: 'on', deess: 'on' });
   if (micOk(browser)) await expectAudible(c); else await waitMedia(w, { video: 0, audio: 10 });
   await chrome.close(); await wctx.close();
 });
@@ -101,4 +101,29 @@ test('↔ Chrome : tableau blanc partagé et « Vu » (salon chiffré)', async (
   await c.fill('#chatIn', 'Lu ?'); await c.press('#chatIn', 'Enter');
   await expect(c.locator('.msg.mine', { hasText: 'Lu ?' }).locator('.seen')).toHaveText(/Vu par Sacha/);
   await chrome.close(); await wctx.close();
+});
+
+// 1.8 : autotune dans ce moteur (AudioWorklet + import de module, sous la CSP de la page d'appel), 44,1 et 48 kHz.
+test('autotune : 450 Hz → 440 Hz, Si en Do majeur, latence ≤ 30 ms, bruit intact', async ({ browser, baseURL }) => {
+  const ctx = browser.browserType().name() === 'webkit' ? await browser.newContext({ baseURL, permissions: ['camera', 'microphone'] }) : await browser.newContext({ baseURL });
+  const p = await ctx.newPage();
+  const chrome = await chromium.launch(chromeOpts);
+  const c = await (await chrome.newContext({ baseURL })).newPage();
+  const url = await createRoom(c, 'Autotune moteur ' + Date.now());
+  await p.goto(url); await expect(p.locator('#joinBtn')).toBeVisible();
+  const ON = { ns: false, comp: false, deess: false, tune: true, tuneSpeed: 100, tuneKey: -1, tuneMinor: false };
+  const cents = (f, r) => 1200 * Math.log2(f / r);
+  for (const sr of [48000, 44100]) {
+    const a = await measureTune(p, ON, { sr }), b = await measureTune(p, { ...ON, tuneKey: 0 }, { f: 470, sr }), nz = await measureTune(p, ON, { kind: 'noise', sr });
+    console.log(browser.browserType().name(), sr, 'autotune', a.hz.toFixed(2), b.hz.toFixed(2), 'latence', a.latencyMs.toFixed(1), 'ms', 'bruit', nz.maxDiff);
+    expect(a.st.tune).toBe('on');
+    expect(Math.abs(cents(a.hz, 440))).toBeLessThan(3); expect(Math.abs(cents(b.hz, 493.88))).toBeLessThan(3);
+    expect(a.latencyMs).toBeLessThanOrEqual(30); expect(nz.maxDiff).toBeLessThan(1e-6);
+  }
+  // interface : interrupteur et réglages
+  await p.locator('.tg[data-fx=tune]').first().click();
+  await expect(p.locator('.tuneset').first()).toBeVisible();
+  await p.locator('.tuneset .tkey').first().selectOption('0');
+  await expect(p.locator('.tuneset .tmode').first()).toBeVisible();
+  await chrome.close(); await ctx.close();
 });

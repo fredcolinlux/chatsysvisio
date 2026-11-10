@@ -24,3 +24,10 @@ Composants tiers servis localement :
 | Police Inter (Rasmus Andersson) | SIL OFL 1.1 | typographie |
 
 Textes des licences RNNoise : `docs/licences/` (copiés dans `public/vendor/rnnoise/`).
+
+Code propre à ChatSysVisio (AGPL-3.0-or-later, aucun code tiers) :
+
+| Module | Contenu |
+|---|---|
+| `public/js/autotune.js`, `public/js/autotune-worklet.js` | autotune : détection de hauteur par la méthode **YIN** (A. de Cheveigné et H. Kawahara, *JASA* 111(4), 2002) et transposition à durée constante par fenêtres synchrones de la période (famille **PSOLA**, deux têtes de lecture en quadrature), correction vers la note de la gamme. Implémentation originale à partir des publications. Les brevets connus sur la TD-PSOLA (1989) et sur la correction de hauteur en temps réel (Antares, US 5 973 252 de 1998) ont expiré. « Auto-Tune » est une marque d'Antares Audio Technologies : ici, le mot « autotune » désigne seulement la fonction, sans lien avec ce produit. |
+| `scripts/voix-synthese.mjs` | voix chantée de synthèse pour les tests et l'extrait de démonstration (aucun enregistrement, aucun droit). |

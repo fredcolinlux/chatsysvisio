@@ -2,7 +2,8 @@
 // chat (réponses, markdown, réactions, fichiers), participants, invitation (lien + QR local).
 import { $, $$, h, icon, api, toast, initChrome, renderSidebar, session, freshSession, ensureFresh, avatar, rememberRoom, myName, setMyName, fmtSize } from './common.js';
 import { Engine, AudioIO, detectCaps, stats } from './media.js';
-import { loadFx, saveFx, noiseSuppressionSupported } from './micfx.js';
+import { loadFx, saveFx, noiseSuppressionSupported, autotuneSupported } from './micfx.js';
+import { NOTE_NAMES } from './autotune.js';
 import { Effects, PRESETS, drawPreset } from './effects.js';
 import { renderMarkdown } from './markdown.js';
 import { L_LO, L_HI, L_SCREEN, L_HD } from './protocol.js';
@@ -101,7 +102,7 @@ function qualityStatus() {
   return parts.join(' ');
 }
 function paintQuality() {
-  $$('.qseg button').forEach(b => { const on = b.dataset.q === S.quality; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+  $$('.qseg button[data-q]').forEach(b => { const on = b.dataset.q === S.quality; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
   const txt = qualityStatus(); $$('.qnow').forEach(e => { if (e.textContent !== txt) e.textContent = txt; });
 }
 function qualityPicker() {
@@ -243,10 +244,12 @@ async function deviceSelects() {
   return wrap;
 }
 
-// ---------------- Traitement du micro (réduction de bruit, compresseur, dé-esseur) ----------------
-// Trois interrupteurs indépendants, enregistrés dans ce navigateur et appliqués à chaud (le micro n'est pas rouvert).
+// ---------------- Traitement du micro (réduction de bruit, autotune, compresseur, dé-esseur) ----------------
+// Quatre interrupteurs indépendants, enregistrés dans ce navigateur et appliqués à chaud (le micro n'est pas rouvert).
+// Ordre de la chaîne : micro → réduction de bruit → autotune → compresseur → dé-esseur → Opus.
 const FX_ITEMS = [
   ['ns', 'Réduction de bruit', 'Souffle, clavier, ventilation (RNNoise, calculé sur ton appareil)'],
+  ['tune', 'Autotune', 'Ramène le chant sur la note juste la plus proche'],
   ['comp', 'Compresseur', 'Voix plus régulière : les passages faibles remontent, les forts sont tenus'],
   ['deess', 'Dé-esseur', 'Adoucit les « s » et « ch » qui sifflent (5–9 kHz)'],
 ];
@@ -254,7 +257,56 @@ async function setFx(k, on) {
   S.fx = { ...S.fx, [k]: on }; saveFx(S.fx); paintFx();
   const st = await S.audio?.setFx(S.fx);
   if (k === 'ns' && on && st?.ns === 'indisponible') toast('Réduction de bruit indisponible sur ce navigateur : seule celle du navigateur reste active.', { error: true });
+  if (k === 'tune' && on && st?.tune === 'indisponible') toast('Autotune indisponible sur ce navigateur : le son passe sans correction.', { error: true });
   paintFx();
+}
+// Réglages de l'autotune (vitesse, tonalité, mode) : enregistrés et transmis à chaud au module audio.
+function setTune(part) {
+  S.fx = { ...S.fx, ...part }; paintFx();
+  S.audio?.setFx(S.fx);
+  saveFx(S.fx); // écriture locale immédiate : rien n'est perdu si la page est fermée juste après
+}
+function tuneField() {
+  const speed = h('input', { type: 'range', class: 'tspeed', min: 0, max: 100, step: 1, value: String(S.fx.tuneSpeed), 'aria-label': 'Vitesse de correction',
+    oninput: e => setTune({ tuneSpeed: +e.target.value }) });
+  const key = h('select', { class: 'tkey', 'aria-label': 'Tonalité', onchange: e => setTune({ tuneKey: +e.target.value }) },
+    h('option', { value: '-1' }, 'Chromatique (toutes les notes)'), NOTE_NAMES.map((n, i) => h('option', { value: String(i) }, n)));
+  key.value = String(S.fx.tuneKey);
+  const mode = h('div', { class: 'seg tmode', role: 'radiogroup', 'aria-label': 'Mode' },
+    [['Majeur', false], ['Mineur', true]].map(([l, minor]) => h('button', { type: 'button', role: 'radio', dataset: { minor: String(minor) }, onclick: () => setTune({ tuneMinor: minor }) }, l)));
+  return h('div', { class: 'tuneset', hidden: true },
+    h('div', { class: 'trow' }, h('span', { class: 'tl' }, 'Vitesse de correction'), h('span', { class: 'tval' })),
+    speed, h('div', { class: 'tends' }, h('span', {}, 'Naturel'), h('span', {}, 'Robot')),
+    h('div', { class: 'trow' }, h('span', { class: 'tl' }, 'Tonalité')),
+    h('div', { class: 'tkeys' }, h('div', { class: 'inp' }, icon('note'), key, icon('down')), mode),
+    h('div', { class: 'tunenow', 'aria-live': 'off' }));
+}
+function speedLabel(v) { return v >= 90 ? 'robot' : v >= 65 ? 'rapide' : v >= 35 ? 'moyenne' : 'naturelle'; }
+function paintTune() {
+  const on = !!S.fx.tune, st = S.audio?.chain?.status?.tune, info = S.audio?.chain?.meters?.()?.tune;
+  $$('.tuneset').forEach(box => {
+    box.hidden = !on;
+    if (!on) return;
+    const sp = box.querySelector('.tspeed'); if (document.activeElement !== sp && +sp.value !== S.fx.tuneSpeed) sp.value = String(S.fx.tuneSpeed);
+    sp.style.setProperty('--v', S.fx.tuneSpeed + '%');
+    box.querySelector('.tval').textContent = `${S.fx.tuneSpeed} · ${speedLabel(S.fx.tuneSpeed)}`;
+    const k = box.querySelector('.tkey'); if (k.value !== String(S.fx.tuneKey)) k.value = String(S.fx.tuneKey);
+    const m = box.querySelector('.tmode'); m.hidden = S.fx.tuneKey < 0;
+    m.querySelectorAll('button').forEach(b => { const sel = b.dataset.minor === String(!!S.fx.tuneMinor); b.classList.toggle('on', sel); b.setAttribute('aria-checked', String(sel)); });
+    const now = box.querySelector('.tunenow');
+    let t, cls = '';
+    if (st === 'indisponible' || (!autotuneSupported() && on)) t = 'Autotune indisponible sur ce navigateur (le son passe sans correction).';
+    else if (!S.audio?.chain) t = 'La note chantée et la correction s\'afficheront ici pendant l\'appel.';
+    else if (st === 'chargement') t = 'Chargement de l\'autotune…';
+    else if (!info?.voiced) { t = 'Pas de voix chantée détectée : le son passe tel quel.'; cls = 'idle'; }
+    else {
+      const c = info.cents, sign = c > 0 ? '+' : c < 0 ? '−' : '±';
+      t = `${info.note}${info.target && info.target !== info.note ? ' → ' + info.target : ''} · ${info.hz.toFixed(0)} Hz · correction ${sign}${Math.abs(c)} cents`;
+      cls = 'tn-live';
+    }
+    if (now.textContent !== t) now.textContent = t;
+    now.className = 'tunenow ' + cls;
+  });
 }
 function fxStatus() {
   const st = S.audio?.chain?.status, parts = [];
@@ -272,6 +324,7 @@ function paintFx() {
     b.classList.toggle('on', on); b.classList.toggle('na', na); b.setAttribute('aria-checked', String(on));
   });
   const t = fxStatus(); $$('.fxnow').forEach(e => { if (e.textContent !== t) e.textContent = t; });
+  paintTune();
 }
 let fxTimer = 0;
 function micFxField({ label = true } = {}) {
@@ -279,13 +332,15 @@ function micFxField({ label = true } = {}) {
     h('span', { class: 'tgt' }, h('b', {}, label), h('small', {}, desc)), h('span', { class: 'sw', 'aria-hidden': 'true' })));
   setTimeout(paintFx, 0);
   // valeurs en direct (réduction de gain) tant que les interrupteurs sont affichés
-  clearInterval(fxTimer); fxTimer = setInterval(() => { if (!$('.fxnow')) { clearInterval(fxTimer); fxTimer = 0; return; } paintFx(); }, 400);
+  clearInterval(fxTimer); fxTimer = setInterval(() => { if (!$('.fxnow')) { clearInterval(fxTimer); fxTimer = 0; return; } paintFx(); }, 200);
+  // réglages de l'autotune juste sous son interrupteur (masqués tant qu'il est coupé)
+  const list = []; for (const b of btns) { list.push(b); if (b.dataset.fx === 'tune') list.push(tuneField()); }
   return h('div', { class: 'field', id: 'micFxField' }, label ? h('label', {}, 'Traitement du micro') : null,
-    h('div', { class: 'toggles fx', role: 'group', 'aria-label': 'Traitement du micro' }, btns), h('div', { class: 'fxnow', 'aria-live': 'polite' }));
+    h('div', { class: 'toggles fx', role: 'group', 'aria-label': 'Traitement du micro' }, list), h('div', { class: 'fxnow', 'aria-live': 'polite' }));
 }
 function openMicFx() {
   modal('Traitement du micro', micFxField({ label: false }),
-    h('div', { class: 'hint' }, icon('mic'), 'Tout est calculé sur ton appareil, avant le chiffrement : rien ne part vers un service extérieur. La réduction de bruit légère du navigateur reste toujours active ; l\'interrupteur ajoute RNNoise, nettement plus efficace.'));
+    h('div', { class: 'hint' }, icon('mic'), 'Ordre : micro → réduction de bruit → autotune → compresseur → dé-esseur → envoi. Tout est calculé sur ton appareil, avant le chiffrement : rien ne part vers un service extérieur. La réduction de bruit légère du navigateur reste toujours active ; l\'interrupteur ajoute RNNoise, nettement plus efficace.'));
 }
 
 // ---------------- Démarrage ----------------
@@ -563,7 +618,7 @@ function techInfo(srv) {
     ['Codec audio', `${S.audio?.codec || '?'}${S.audio?.codec === 'opus' && st.opusMode ? ' (débit ' + st.opusMode + ')' : ''} · ${st.audioRate || '?'} Hz`],
     ['Micro', S.mic ? `ouvert · niveau ${Math.round(S.audio?.level || 0)}` : 'coupé'],
     ['Traitement du micro', (() => { const f = st.micfx; if (!f) return 'non démarré'; const w = v => v === 'on' ? 'oui' : v === 'off' ? 'non' : v;
-      return `réduction de bruit ${w(f.ns)}${f.simd === true ? ' (SIMD)' : f.simd === false ? ' (sans SIMD)' : ''} · compresseur ${w(f.comp)} · dé-esseur ${w(f.deess)} · ${f.rate / 1000} kHz`; })()],
+      return `réduction de bruit ${w(f.ns)}${f.simd === true ? ' (SIMD)' : f.simd === false ? ' (sans SIMD)' : ''} · autotune ${w(f.tune)}${f.tune === 'on' && f.tuneMs ? ` (${f.tuneMs.toFixed(1)} ms)` : ''} · compresseur ${w(f.comp)} · dé-esseur ${w(f.deess)} · ${f.rate / 1000} kHz`; })()],
     ['Paquets audio envoyés', String(st.sent.audio)],
     ['Paquets audio reçus', sum(st.recv.audio) ? Object.entries(st.recv.audio).map(([k, v]) => `${name(k)} : ${v}`).join(' · ') : '0'],
     ['Paquets audio décodés', String(sum(st.decoded.audio))],

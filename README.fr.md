@@ -27,7 +27,9 @@ Dérivé de [Camus](https://github.com/camuschat/camus) (AGPL-3.0, voir `NOTICE.
   BT.601/709), le récepteur décode en conséquence ; voile sous les noms allégé. Mesuré par une mire (`scripts/color-measure.mjs`,
   test `couleurs.spec.mjs`) : ΔE moyen 3,1 → 0,3.
 - **Traitement du micro (1.6)** : réduction de bruit (RNNoise en WebAssembly, calculée sur l'appareil), compresseur et
-  dé-esseur, trois interrupteurs indépendants appliqués à chaud pendant l'appel (salle d'attente ou menu « … »).
+  dé-esseur, interrupteurs indépendants appliqués à chaud pendant l'appel (salle d'attente ou menu « … »).
+- **Autotune (1.8)** : ramène le chant sur la note juste (chromatique ou gamme majeure / mineure), vitesse réglable de
+  naturelle à « robot », note affichée en direct ; calculé sur l'appareil, 13 ms de latence, son intact hors voix chantée.
 - **Tableau blanc partagé (1.7)** : croquis à plusieurs, affiché chez tous comme un partage d'écran ; stylet sensible à la
   pression, formes, gomme, annulation par personne, export PNG, verrou par la personne qui l'a ouvert ; traits vectoriels,
   chiffrés de bout en bout dans les salons privés.
@@ -37,8 +39,8 @@ Dérivé de [Camus](https://github.com/camuschat/camus) (AGPL-3.0, voir `NOTICE.
 **Installation rapide (paquet autonome hors ligne, Debian 13)** :
 
 ```bash
-sha256sum -c chatsysvisio-1.7.0.tar.gz.sha256
-tar -xzf chatsysvisio-1.7.0.tar.gz && cd chatsysvisio-1.7.0 && bash install.sh
+sha256sum -c chatsysvisio-1.8.0.tar.gz.sha256
+tar -xzf chatsysvisio-1.8.0.tar.gz && cd chatsysvisio-1.8.0 && bash install.sh
 ```
 
 Manuel complet : **`docs/MANUEL.md`** · migration depuis l'ancien nom : **`docs/MIGRATION.md`** · détails : **`README-INSTALL.md`**. Choix techniques et limites : **`docs/ARCHITECTURE.md`**.

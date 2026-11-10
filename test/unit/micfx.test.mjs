@@ -49,14 +49,18 @@ test('dé-esseur : atténuation plafonnée (maxCut) et fréquence d\'échantillo
   for (const v of y) assert.ok(Number.isFinite(v));
 });
 
-test('réglages : trois interrupteurs indépendants, coupés par défaut, valeurs invalides ignorées', () => {
-  assert.deepEqual(parseFx(null), { comp: false, deess: false, ns: false });
+test('réglages : quatre interrupteurs indépendants, coupés par défaut, valeurs invalides ignorées', () => {
+  assert.deepEqual(parseFx(null), { comp: false, deess: false, ns: false, tune: false, tuneSpeed: 50, tuneKey: -1, tuneMinor: false });
+  // réglages enregistrés par une 1.6 / 1.7 (trois clés) : l'autotune reste coupé
+  assert.deepEqual(parseFx('{"comp":true,"deess":false,"ns":true}'), { ...FX_DEFAULTS, comp: true, ns: true });
+  assert.deepEqual(parseFx('{"tune":true,"tuneSpeed":101,"tuneKey":12,"tuneMinor":"oui"}'), { ...FX_DEFAULTS, tune: true });
+  assert.deepEqual(parseFx('{"tune":true,"tuneSpeed":85,"tuneKey":9,"tuneMinor":true}'), { ...FX_DEFAULTS, tune: true, tuneSpeed: 85, tuneKey: 9, tuneMinor: true });
   assert.deepEqual(parseFx('{"comp":true,"ns":"oui","x":1}'), { ...FX_DEFAULTS, comp: true });
   assert.deepEqual(parseFx('pas du json'), FX_DEFAULTS);
   const mem = new Map(), st = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)) };
-  saveFx({ comp: false, deess: true, ns: true }, st);
+  saveFx({ ...FX_DEFAULTS, deess: true, ns: true }, st);
   assert.equal(JSON.parse(mem.get(FX_KEY)).deess, true);
-  assert.deepEqual(loadFx(st), { comp: false, deess: true, ns: true });
+  assert.deepEqual(loadFx(st), { ...FX_DEFAULTS, deess: true, ns: true });
 });
 
 test('compresseur : réglages « voix » dans les bornes de DynamicsCompressorNode', () => {

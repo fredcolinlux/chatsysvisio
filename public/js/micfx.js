@@ -1,7 +1,10 @@
 // Chaîne de traitement du micro (Web Audio), entre la source getUserMedia et la capture vers l'encodeur Opus :
-//   source → [réduction de bruit RNNoise] → [compresseur + gain de compensation] → [dé-esseur] → capture
+//   source → [réduction de bruit RNNoise] → [autotune] → [compresseur + gain de compensation] → [dé-esseur] → capture
+// L'autotune vient après la réduction de bruit (hauteur détectée sur une voix propre, moins de faux départs) et avant
+// le compresseur (dont les variations de gain ne gênent pas la détection, et qui égalise ensuite le niveau).
 // Chaque étage s'active ou se coupe à chaud (recâblage des nœuds, sans toucher au micro ni à l'appel).
 import { COMPRESSOR, COMPRESSOR_MAKEUP_DB, FX_DEFAULTS, parseFx } from './dsp.js';
+import { tuneLatency } from './autotune.js';
 
 export const FX_KEY = 'csv-micfx';
 export const loadFx = (st = globalThis.localStorage) => parseFx(st?.getItem(FX_KEY));
@@ -13,6 +16,8 @@ const SIMD_PROBE = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 
 let rnBinary = null; // binaire wasm, téléchargé une fois par page (≈ 150 ko, servi par ton serveur)
 const rnModules = new WeakMap(); // contexte → module du worklet RNNoise chargé
 const deModules = new WeakMap(); // contexte → module du dé-esseur chargé
+const atModules = new WeakMap(); // contexte → module de l'autotune chargé
+export const autotuneSupported = () => typeof AudioWorkletNode === 'function';
 
 export function noiseSuppressionSupported() {
   return typeof WebAssembly === 'object' && typeof AudioWorkletNode === 'function';
@@ -39,7 +44,9 @@ export class MicChain {
   constructor(ctx) {
     this.ctx = ctx; this.fx = { ...FX_DEFAULTS };
     this.input = ctx.createGain(); this.output = ctx.createGain();
-    this.status = { ns: 'off', comp: 'off', deess: 'off' };
+    this.status = { ns: 'off', tune: 'off', comp: 'off', deess: 'off' };
+    this.tune = null; this.tuneError = null; this.tuneInfo = null;
+    this.tuneLatencyMs = tuneLatency(ctx.sampleRate) / ctx.sampleRate * 1000;
     this.deessDb = 0; this.nsInfo = '';
     this.comp = ctx.createDynamicsCompressor();
     for (const [k, v] of Object.entries(COMPRESSOR)) this.comp[k].value = v;
@@ -48,7 +55,7 @@ export class MicChain {
     this.de = null; this.deError = null; this.ns = null; this.nsLoading = null; this.seq = 0;
     this.wire();
   }
-  // Applique les trois interrupteurs. Renvoie l'état effectif ({ ns, comp, deess } : 'on' | 'off' | 'indisponible').
+  // Applique les quatre interrupteurs. Renvoie l'état effectif ({ ns, tune, comp, deess } : 'on' | 'off' | 'indisponible').
   async set(fx) {
     this.fx = { ...FX_DEFAULTS, ...fx }; const my = ++this.seq;
     this.wire(); // compresseur : immédiat
@@ -63,6 +70,20 @@ export class MicChain {
       } catch (e) { this.deError = String(e?.message || e); }
       if (my === this.seq) this.wire();
     }
+    if (this.fx.tune && !this.tune && !this.tuneError) {
+      try {
+        if (!autotuneSupported()) throw new Error('AudioWorklet indisponible');
+        if (!atModules.has(this.ctx)) atModules.set(this.ctx, this.ctx.audioWorklet.addModule('/js/autotune-worklet.js').catch(e => { atModules.delete(this.ctx); throw e; }));
+        await atModules.get(this.ctx);
+        if (!this.tune) {
+          this.tune = new AudioWorkletNode(this.ctx, 'cc-autotune', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1], channelCount: 1, channelCountMode: 'explicit',
+            processorOptions: this.tuneParams() });
+          this.tune.port.onmessage = e => { this.tuneInfo = e.data; };
+        }
+      } catch (e) { this.tuneError = String(e?.message || e); }
+      if (my === this.seq) this.wire();
+    }
+    this.tune?.port.postMessage(this.tuneParams()); // vitesse, tonalité, mode : à chaud
     if (this.fx.ns && !this.ns && !this.nsError) {
       try {
         this.nsLoading ||= rnnoiseNode(this.ctx);
@@ -76,24 +97,28 @@ export class MicChain {
     }
     return this.status;
   }
+  tuneParams() { return { tuneSpeed: this.fx.tuneSpeed, tuneKey: this.fx.tuneKey, tuneMinor: this.fx.tuneMinor }; }
   wire() {
-    const all = [this.input, this.ns, this.comp, this.makeup, this.de].filter(Boolean);
+    const all = [this.input, this.ns, this.tune, this.comp, this.makeup, this.de].filter(Boolean);
     for (const n of all) { if (n === this.comp) continue; try { n.disconnect(); } catch {} }
     const stages = [];
     if (this.fx.ns && this.ns) stages.push([this.ns, this.ns]);
+    if (this.fx.tune && this.tune) stages.push([this.tune, this.tune]);
     if (this.fx.comp) stages.push([this.comp, this.makeup]);
     if (this.fx.deess && this.de) stages.push([this.de, this.de]);
     let last = this.input;
     for (const [a, b] of stages) { last.connect(a); last = b; }
     last.connect(this.output);
     this.status.ns = this.nsError ? 'indisponible' : !this.fx.ns ? 'off' : this.ns ? 'on' : 'chargement';
+    this.status.tune = this.tuneError ? 'indisponible' : !this.fx.tune ? 'off' : this.tune ? 'on' : 'chargement';
+    if (!this.fx.tune) this.tuneInfo = null;
     this.status.comp = this.fx.comp ? 'on' : 'off';
     this.status.deess = this.deError ? 'indisponible' : !this.fx.deess ? 'off' : this.de ? 'on' : 'chargement';
   }
   // Réduction de gain en cours (dB, valeurs positives) : affichage « en direct » sous les interrupteurs.
-  meters() { return { comp: this.fx.comp ? Math.max(0, -(this.comp.reduction?.value ?? this.comp.reduction ?? 0)) : 0, deess: this.fx.deess ? this.deessDb : 0 }; }
+  meters() { return { comp: this.fx.comp ? Math.max(0, -(this.comp.reduction?.value ?? this.comp.reduction ?? 0)) : 0, deess: this.fx.deess ? this.deessDb : 0, tune: this.fx.tune ? this.tuneInfo : null }; }
   dispose() {
-    for (const n of [this.input, this.ns, this.comp, this.makeup, this.de, this.output]) { try { n?.disconnect(); } catch {} }
+    for (const n of [this.input, this.ns, this.tune, this.comp, this.makeup, this.de, this.output]) { try { n?.disconnect(); } catch {} }
     try { this.ns?.port.postMessage('destroy'); } catch {}
   }
 }

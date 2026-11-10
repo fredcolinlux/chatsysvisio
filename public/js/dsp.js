@@ -10,12 +10,16 @@ export const COMPRESSOR_MAKEUP_DB = 2;
 // Dé-esseur : compression de la seule bande 5–9 kHz quand elle domine (les « s », « ch » sifflants).
 export const DEESSER = Object.freeze({ lo: 5000, hi: 9000, threshold: -34, rel: -9, ratio: 4, maxCut: 14, attackMs: 1, releaseMs: 70 });
 
-// Réglages enregistrés (localStorage 'csv-micfx') : trois interrupteurs indépendants, tous coupés par défaut.
-export const FX_DEFAULTS = Object.freeze({ comp: false, deess: false, ns: false });
+// Réglages enregistrés (localStorage 'csv-micfx') : quatre interrupteurs indépendants, tous coupés par défaut,
+// et les réglages de l'autotune (vitesse 0–100, tonalité -1 = chromatique ou 0 = Do … 11 = Si, mode mineur).
+export const FX_DEFAULTS = Object.freeze({ comp: false, deess: false, ns: false, tune: false, tuneSpeed: 50, tuneKey: -1, tuneMinor: false });
 export function parseFx(raw) {
   let o = null; try { o = JSON.parse(raw); } catch {}
   const out = { ...FX_DEFAULTS };
-  if (o && typeof o === 'object') for (const k of Object.keys(FX_DEFAULTS)) if (typeof o[k] === 'boolean') out[k] = o[k];
+  if (!o || typeof o !== 'object') return out;
+  for (const k of ['comp', 'deess', 'ns', 'tune', 'tuneMinor']) if (typeof o[k] === 'boolean') out[k] = o[k];
+  if (Number.isFinite(o.tuneSpeed) && o.tuneSpeed >= 0 && o.tuneSpeed <= 100) out.tuneSpeed = Math.round(o.tuneSpeed);
+  if (Number.isInteger(o.tuneKey) && o.tuneKey >= -1 && o.tuneKey <= 11) out.tuneKey = o.tuneKey;
   return out;
 }
 

@@ -69,3 +69,26 @@ export async function measureMicFx(page, fx, signal) {
     return { inDb, outDb: rms(out, sr / 2), st: { ...st } };
   }, { fx, signal });
 }
+
+// Autotune : rend un son à travers MicChain (rendu hors ligne, CSP de la page d'appel) et mesure en sortie la hauteur
+// (passages par zéro sur la dernière demi-seconde) et le retard ajouté (début du son). signal : { f, sec, kind }.
+export async function measureTune(page, fx, { f = 450, sec = 1.5, kind = 'sine', sr = 48000 } = {}) {
+  return page.evaluate(async ({ fx, f, sec, kind, sr }) => {
+    const { MicChain } = await import('/js/micfx.js');
+    const n = Math.round(sr * sec), lead = Math.round(sr * 0.3), ctx = new OfflineAudioContext(1, n, sr);
+    const chain = new MicChain(ctx); const st = await chain.set(fx);
+    const buf = ctx.createBuffer(1, n, sr), x = buf.getChannelData(0);
+    let seed = 5; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647 * 2 - 1;
+    for (let i = lead; i < n; i++) x[i] = kind === 'noise' ? 0.2 * rnd() : 0.3 * Math.sin(2 * Math.PI * f * (i - lead) / sr);
+    const xin = Float32Array.from(x); // copie (Firefox détache le tampon confié au moteur audio)
+    const src = ctx.createBufferSource(); src.buffer = buf; src.connect(chain.input); chain.output.connect(ctx.destination); src.start();
+    if (ctx.suspend) ctx.suspend(0.05).then(() => setTimeout(() => ctx.resume(), 300)); else await new Promise(r => setTimeout(r, 500));
+    const y = (await ctx.startRendering()).getChannelData(0);
+    let first = -1, last = -1, z = 0;
+    for (let i = n - Math.round(sr * 0.5); i < n; i++) if (y[i - 1] < 0 && y[i] >= 0) { const t = i - 1 + -y[i - 1] / (y[i] - y[i - 1]); if (first < 0) first = t; last = t; z++; }
+    const on = a => { for (let i = 0; i < a.length; i++) if (Math.abs(a[i]) > 0.02) return i; return -1; };
+    const L = on(y) - on(xin);
+    let maxDiff = 0; if (kind === 'noise') for (let i = Math.max(0, L); i < n; i++) maxDiff = Math.max(maxDiff, Math.abs(y[i] - xin[i - L]));
+    return { hz: (z - 1) * sr / (last - first), latencyMs: L / sr * 1000, maxDiff, st: { ...st }, chainMs: chain.tuneLatencyMs };
+  }, { fx, f, sec, kind, sr });
+}

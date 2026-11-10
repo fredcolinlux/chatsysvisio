@@ -221,7 +221,7 @@ button.pill{cursor:pointer}
 .sw::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(5,8,15,.3);transition:transform var(--d-base) var(--ease-out)}
 .on>.sw,.sw.on{background:var(--acc-solid);box-shadow:none}.on>.sw::after,.sw.on::after{transform:translateX(14px)}
 /* interrupteurs du traitement micro : une ligne par réglage, libellé + description */
-.toggles.fx{grid-template-columns:1fr;gap:6px;margin:2px 0 6px}
+.toggles.fx{grid-template-columns:minmax(0,1fr);gap:6px;margin:2px 0 6px}
 .tg{transition:transform var(--d-press) var(--ease-out),box-shadow var(--d-base) var(--ease-out)}
 .tg:active{transform:scale(.97)}
 .tg.on{box-shadow:var(--sh-sm),inset 0 0 0 1px var(--acc-line)}
@@ -746,3 +746,32 @@ body.idle.incall .stage{cursor:none}
   .wbgrp{flex:none}
 }
 @media (prefers-reduced-motion:reduce){.wbtag,.wbstatus{animation:none}.wbtag{transition:none}}
+
+/* ---- Autotune (1.8) : réglages sous l'interrupteur ---- */
+.tuneset{min-width:0;display:flex;flex-direction:column;gap:6px;margin:-2px 0 4px;padding:12px 12px 10px;border-radius:var(--r-sm);background:var(--panel2);box-shadow:inset 0 0 0 1px var(--line);animation:tuneIn var(--d-base) var(--ease-out) both}
+.tuneset[hidden]{display:none}
+@keyframes tuneIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.tuneset .trow{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:12.5px}
+.tuneset .tl{color:var(--fg2);font-weight:500}
+.tuneset .tval{color:var(--acc);font-weight:500;font-feature-settings:"tnum"}
+.tuneset .tends{display:flex;justify-content:space-between;font-size:11px;color:var(--faint);margin:-2px 0 4px}
+.tspeed{-webkit-appearance:none;appearance:none;width:100%;height:22px;background:transparent;margin:0;--v:50%;cursor:pointer;touch-action:pan-y}
+.tspeed::-webkit-slider-runnable-track{height:4px;border-radius:99px;background:linear-gradient(90deg,var(--acc-solid) var(--v),var(--line3) var(--v))}
+.tspeed::-moz-range-track{height:4px;border-radius:99px;background:var(--line3)}
+.tspeed::-moz-range-progress{height:4px;border-radius:99px;background:var(--acc-solid)}
+.tspeed::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;margin-top:-7px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(5,8,15,.35),0 0 0 1px rgba(5,8,15,.08);transition:transform var(--d-press) var(--ease-out)}
+.tspeed::-moz-range-thumb{width:18px;height:18px;border:0;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(5,8,15,.35)}
+.tspeed:active::-webkit-slider-thumb{transform:scale(1.12)}
+.tspeed:focus-visible{outline:2px solid var(--ring);outline-offset:2px;border-radius:6px}
+.tuneset .tkeys{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+.tuneset .tkeys .inp{height:38px;min-width:0}
+.tuneset .tkeys .inp select{height:38px;min-width:0;width:100%;text-overflow:ellipsis}
+.tuneset .tmode{display:grid;grid-template-columns:repeat(2,auto)}
+.tuneset .tmode button:active{transform:scale(var(--press))}
+.tuneset .tmode button:focus-visible{outline:2px solid var(--ring);outline-offset:1px}
+.tuneset .tmode[hidden]{display:none}
+.tuneset .tmode button{padding:0 12px}
+.tunenow{margin-top:4px;min-height:20px;font-size:12.5px;color:var(--muted);font-feature-settings:"tnum";transition:color var(--d-fast) var(--ease-out)}
+.tunenow.tn-live{color:var(--acc)}
+@media (max-width:760px){.tuneset .tkeys{grid-template-columns:minmax(0,1fr)}.tuneset .tmode{grid-template-columns:1fr 1fr}.tspeed{height:30px}}
+@media (prefers-reduced-motion:reduce){.tuneset{animation:none}}

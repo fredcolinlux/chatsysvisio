@@ -333,12 +333,13 @@ autres (et les leurs pour lui) → « pas de son » jusqu'à Ctrl+F5. Correctifs
   les deux sens, en salon chiffré et public, micro coupé = silence ; Chromium et Edge, et Chrome ↔ WebKit/Firefox dans
   `navigateurs.spec.mjs`. Panneau « Infos techniques » (menu « … ») avec les compteurs audio.
 
-## Traitement du micro (1.6)
+## Traitement du micro (1.6, autotune 1.8)
 
 - Chaîne Web Audio dans le même `AudioContext` que la capture (`public/js/micfx.js`) :
-  `MediaStreamSource → [RNNoise] → [DynamicsCompressor + gain +2 dB] → [dé-esseur] → cc-capture → Opus`.
+  `MediaStreamSource → [RNNoise] → [autotune] → [DynamicsCompressor + gain +2 dB] → [dé-esseur] → cc-capture → Opus`.
   Chaque interrupteur recâble les nœuds (`MicChain.set`) : le micro n'est pas rouvert, l'appel continue. Réglages dans
-  `localStorage['csv-micfx']` (`{ ns, comp, deess }`, tous coupés par défaut).
+  `localStorage['csv-micfx']` (`{ ns, comp, deess, tune, tuneSpeed, tuneKey, tuneMinor }`, tous coupés par défaut ;
+  un ancien réglage à trois clés reste lu).
 - **Réduction de bruit** : RNNoise (BSD-3-Clause) compilé en wasm par `@shiguredo/rnnoise-wasm` (Apache-2.0), worklet
   de `@sapphi-red/web-noise-suppressor` (MIT), copiés par `scripts/vendor.mjs` dans `public/vendor/rnnoise/` avec leurs
   licences (`docs/licences/`). Version SIMD si le navigateur la valide, sinon version simple. Le binaire est téléchargé
@@ -347,8 +348,32 @@ autres (et les leurs pour lui) → « pas de son » jusqu'à Ctrl+F5. Correctifs
 - **Dé-esseur** (`public/js/dsp.js`, worklet `cc-deesser`) : passe-bande 5–9 kHz en détection latérale ;
   `y = x − (1 − g)·bande(x)`, g calculé sur l'enveloppe de la bande (seuil −34 dBFS et niveau global − 9 dB, ratio 4:1,
   jusqu'à −14 dB, attaque 1 ms, relâchement 70 ms). Hors sifflante g = 1 : sortie identique à l'entrée.
-- Tests : `test/unit/micfx.test.mjs` (DSP), `test/e2e/micfx.spec.mjs` (mesure du signal par rendu hors ligne dans la page
-  d'appel, interrupteurs, application à chaud, repli sans WebAssembly). Coût : `scripts/micfx-bench.mjs`.
+- **Autotune** (`public/js/autotune.js`, worklet `cc-autotune` chargé à la demande, `import` de module, sans CDN).
+  Le code est original, à partir des publications ; les brevets PSOLA et Antares ont expiré (voir `NOTICE.md`).
+  - *Détection* : YIN sur le signal décimé vers ≈ 12 kHz (filtre de Butterworth d'ordre 4), fenêtre de 16 ms toutes
+    les 5 ms ; seuil 0,15. Le son est jugé non voisé si l'apériodicité dépasse 0,25 ou si le niveau est sous −50 dBFS.
+    La période est affinée à pleine cadence (différence carrée, puis interpolation parabolique). Plage 70–1 000 Hz.
+  - *Cible* : note de la gamme la plus proche (chromatique, ou majeur / mineur sur une tonique), avec une hystérésis
+    de 15 cents. Le rapport est lissé avec τ = 0,14 s·(1 − vitesse/100)², donc 100 = saut instantané (« robot »). Il
+    repart de zéro à chaque attaque qui suit plus de 60 ms de silence.
+  - *Transposition à durée constante* : deux têtes de lecture dans une ligne à retard, aux retards L + (p − ½)·D,
+    pondérées en sin² et en quadrature. p avance de (1 − r)/D. La fenêtre D est un multiple de la période (≈ 16 ms,
+    avec hystérésis) : c'est un PSOLA synchrone, sans battement. Lecture par interpolation d'Hermite.
+  - *Latence fixe* L = 13 ms (624 échantillons à 48 kHz). Hors voix, la sortie vaut exactement x[n − L] : la
+    différence avec le signal retardé est nulle, ce qui garantit l'absence d'artefact. Passage voisé ↔ non voisé
+    en fondu de 6 ms.
+  - *Ordre dans la chaîne* : après la réduction de bruit, pour détecter sur une voix propre ; avant le compresseur,
+    pour que ses variations de gain ne faussent pas YIN, le compresseur égalisant ensuite le chant corrigé. Le
+    dé-esseur reste en dernier.
+  - Le worklet poste `{ voiced, hz, note, target, cents }` environ 10 fois par seconde, pour l'affichage en direct.
+  - Sans AudioWorklet, ou si le module est refusé : état « indisponible », le son passe sans correction.
+- Tests :
+  - `test/unit/micfx.test.mjs` et `test/unit/autotune.test.mjs` (DSP : 450 → 440 Hz, gammes, durée, bruit intact,
+    voix de synthèse `scripts/voix-synthese.mjs`, CPU) ;
+  - `test/e2e/micfx.spec.mjs` : mesure du signal par rendu hors ligne dans la page d'appel, interrupteurs,
+    application à chaud, note en direct avec un micro factice « chanteur », replis ;
+  - `navigateurs.spec.mjs` : la même mesure dans Firefox et WebKit.
+- Coût : `scripts/micfx-bench.mjs`.
 
 ## « Vu » et tableau blanc (1.7)
 
