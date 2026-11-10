@@ -257,7 +257,7 @@ appliquée, par exemple « Sol♯ 3 → La 3 · 431 Hz · correction +38 cents �
 
 ![Autotune](img/autotune.png)
 
-![Autotune sur mobile](img/autotune-mobile.png)
+<img src="img/autotune-mobile.png" alt="Autotune sur mobile" width="300">
 
 Fonctionnement :
 
