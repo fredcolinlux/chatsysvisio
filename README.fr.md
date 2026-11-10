@@ -28,13 +28,17 @@ Dérivé de [Camus](https://github.com/camuschat/camus) (AGPL-3.0, voir `NOTICE.
   test `couleurs.spec.mjs`) : ΔE moyen 3,1 → 0,3.
 - **Traitement du micro (1.6)** : réduction de bruit (RNNoise en WebAssembly, calculée sur l'appareil), compresseur et
   dé-esseur, trois interrupteurs indépendants appliqués à chaud pendant l'appel (salle d'attente ou menu « … »).
+- **Tableau blanc partagé (1.7)** : croquis à plusieurs, affiché chez tous comme un partage d'écran ; stylet sensible à la
+  pression, formes, gomme, annulation par personne, export PNG, verrou par la personne qui l'a ouvert ; traits vectoriels,
+  chiffrés de bout en bout dans les salons privés.
+- **« Vu » dans le chat (1.7)** : « Vu par … » sous ses propres messages, seulement quand le message a vraiment été affiché.
 - **Comptes facultatifs** : pseudo réservé, inscriptions fermées / ouvertes / sur invitation / validées par l'admin.
 
 **Installation rapide (paquet autonome hors ligne, Debian 13)** :
 
 ```bash
-sha256sum -c chatsysvisio-1.6.0.tar.gz.sha256
-tar -xzf chatsysvisio-1.6.0.tar.gz && cd chatsysvisio-1.6.0 && bash install.sh
+sha256sum -c chatsysvisio-1.7.0.tar.gz.sha256
+tar -xzf chatsysvisio-1.7.0.tar.gz && cd chatsysvisio-1.7.0 && bash install.sh
 ```
 
 Manuel complet : **`docs/MANUEL.md`** · migration depuis l'ancien nom : **`docs/MIGRATION.md`** · détails : **`README-INSTALL.md`**. Choix techniques et limites : **`docs/ARCHITECTURE.md`**.

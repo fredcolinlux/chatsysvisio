@@ -76,3 +76,29 @@ test('traitement du micro : réduction de bruit, dé-esseur et compresseur actif
   if (micOk(browser)) await expectAudible(c); else await waitMedia(w, { video: 0, audio: 10 });
   await chrome.close(); await wctx.close();
 });
+
+// 1.7 : tableau blanc (chiffré) et « Vu » dans ce moteur face à Chrome.
+test('↔ Chrome : tableau blanc partagé et « Vu » (salon chiffré)', async ({ browser, baseURL }) => {
+  const { w, c, chrome, wctx } = await pair(browser, baseURL);
+  await expect(w.locator('.tile')).toHaveCount(2);
+  const items = p => p.evaluate(() => window.__ccState.wb?.view?.items.map(s => s.k) || null);
+  async function draw(p, pts) {
+    const box = await p.locator('.tile.board:not(.small) .wbpaper').boundingBox();
+    await p.mouse.move(box.x + pts[0][0] * box.width, box.y + pts[0][1] * box.height); await p.mouse.down();
+    for (const [x, y] of pts.slice(1)) await p.mouse.move(box.x + x * box.width, box.y + y * box.height, { steps: 6 });
+    await p.mouse.up();
+  }
+  await c.click('#dBoard');
+  await expect(w.locator('.tile.board:not(.small) .wbpaper')).toBeVisible();
+  await draw(w, [[.2, .2], [.4, .5], [.6, .3]]);
+  await expect.poll(() => items(c)).toEqual(['pen']);
+  await c.click('[data-tool="rect"]'); await draw(c, [[.5, .5], [.8, .8]]);
+  await expect.poll(() => items(w)).toEqual(['pen', 'rect']);
+  expect(await w.locator('.wbpaper').evaluate(e => getComputedStyle(e).touchAction)).toBe('none');
+  expect(await w.evaluate(() => window.__cc.errors.filter(e => /wb|e2ee/.test(e)))).toEqual([]);
+  // « Vu » : Chrome écrit, ce navigateur lit
+  for (const p of [c, w]) if (!(await p.locator('#chatIn').isVisible())) await p.click('#dChat');
+  await c.fill('#chatIn', 'Lu ?'); await c.press('#chatIn', 'Enter');
+  await expect(c.locator('.msg.mine', { hasText: 'Lu ?' }).locator('.seen')).toHaveText(/Vu par Sacha/);
+  await chrome.close(); await wctx.close();
+});

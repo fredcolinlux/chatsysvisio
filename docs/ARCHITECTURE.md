@@ -350,6 +350,32 @@ autres (et les leurs pour lui) → « pas de son » jusqu'à Ctrl+F5. Correctifs
 - Tests : `test/unit/micfx.test.mjs` (DSP), `test/e2e/micfx.spec.mjs` (mesure du signal par rendu hors ligne dans la page
   d'appel, interrupteurs, application à chaud, repli sans WebAssembly). Coût : `scripts/micfx-bench.mjs`.
 
+## « Vu » et tableau blanc (1.7)
+
+- **Accusés de lecture** : chaque message utilisateur garde côté serveur la clé d'identité de son auteur (`ark` =
+  `p.rk`, compte ou empreinte de session ; jamais diffusée, retirée par `publicMsg`). Le client envoie
+  `{t:'seen', ids:[…]}` (50 ids au plus, regroupés toutes les 800 ms, 4 envois/s) seulement si l'onglet est visible,
+  le panneau Messages ouvert et le message affiché à 60 % (IntersectionObserver sur `#msgs`). Le serveur ignore les ids
+  inconnus, les messages système/IA et ses propres messages ; le lecteur est toujours la connexion émettrice. Agrégat en
+  mémoire dans l'état du salon (`rs.seen` : 400 messages × 30 lecteurs au plus, le plus ancien sort en premier), libéré
+  quand le salon se vide. Seules les connexions de l'auteur reçoivent `{t:'seen', items:[{id, by:[noms]}]}` ; à la
+  reconnexion, l'historique porte `own:true` sur ses messages et les accusés sont renvoyés. Salon chiffré : l'accusé ne
+  porte que l'id opaque du message ; le nom du lecteur est déjà connu du serveur (liste des participants), le chiffrer
+  n'apporterait rien et empêcherait la validation.
+- **Tableau blanc** (`public/js/board-model.js` partagé serveur/navigateur, `public/js/board.js` pour la vue) : feuille
+  16:9 en coordonnées entières 10000 × 5625, traits `{id, k, c, w, pr?, p:[x,y(,pression)…]}` (400 points au plus ; un
+  trait plus long est découpé et annulé d'un bloc), formes à 2 points. Pointer Events (`getCoalescedEvents`, capture,
+  `touch-action:none`), lissage quadratique, gomme `destination-out`, rendu sur deux canvas (base + direct). Fragments en
+  direct (`op:'live'`, toutes les 50 ms) relayés sans être stockés ; traits finis (`op:'add'`) conservés dans
+  `rs.board.items` et rejoués aux arrivants (`op:'state'` après `welcome`). `undo` ne retire que les traits dont l'auteur
+  (`rk`) est l'émetteur ; `redo` renvoie les traits sous de nouveaux ids. `open` (un seul tableau), `lock`, `clear`,
+  `close` : ouvreur seulement. Limites : 5000 traits, 4 Mo, 12 000 caractères par trait chiffré, débits par personne
+  (direct 40/s, ajout 20/s, annulation 10/s, gestion 3/s), plus les plafonds généraux (20 000 caractères, 120 messages/s).
+  Départ de l'ouvreur : 20 s de grâce (même `rk` → reprise), sinon fermeture. Salon chiffré : traits scellés avec la clé
+  du salon (AES-GCM), étiquette `wb:<id>` pour les traits conservés (l'id est lié au contenu) et `wbl` pour le direct ;
+  le serveur ne voit que `{id, enc}`. Affichage : tuile `wb` placée en grande vue avant les écrans partagés, `S.pinned`
+  prioritaire. Aucun changement de CSP (pas de script en ligne, pas de CDN).
+
 ## Interface et système visuel (1.4, mise en page 1.5)
 
 Inspirée d'Emil Kowalski (emilkowal.ski, Sonner, Vaul) et des règles du skill « impeccable » (mode « operate » :

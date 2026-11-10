@@ -9,6 +9,8 @@ import { L_LO, L_HI, L_SCREEN, L_HD } from './protocol.js';
 import { QUALITY_OPTIONS, normalizeQuality, ceilingFor, pickLayer } from './quality.js';
 import { prepare, fromPassword, finish, startSession, inviteUrl, needsPw } from './room-e2ee.js';
 import { encryptFile, decryptFile, sniffImage, b64u, rand } from './e2ee.js';
+import { BoardView } from './board.js';
+import { validStroke } from './board-model.js';
 
 const slug = decodeURIComponent(location.pathname.split('/')[2] || '').toLowerCase();
 initChrome({ activeSlug: slug });
@@ -25,6 +27,7 @@ const S = {
   bg: localStorage.getItem('cc-bg') || 'none', facing: 'user', fx: loadFx(),
   peers: new Map(), bySid: new Map(), me: null, speakerSid: 0, order: [], page: 0, pinned: null,
   tiles: new Map(), msgs: new Map(), replyTo: null, panel: !isMobile(), view: localStorage.getItem('cc-view') === 'speaker' ? 'speaker' : 'grid', tab: 'chat', unread: 0, joinedAt: 0, typing: new Map(),
+  seen: new Map(), wb: null,
 };
 window.__ccState = S; // inspection (tests)
 
@@ -390,6 +393,7 @@ function refreshButtons() {
   $('#dHand')?.classList.toggle('on', !!S.engine?.state.hand);
   $('#dScreen')?.classList.toggle('on', !!S.engine?.state.screen);
   $('#dChat')?.classList.toggle('on', S.panel && S.tab === 'chat');
+  const bb = $('#dBoard'); if (bb) { bb.classList.toggle('on', !!S.wb); const t = !S.wb ? 'Tableau blanc' : isBoardOwner() ? 'Fermer le tableau blanc' : 'Afficher le tableau blanc'; bb.dataset.tip = t; bb.setAttribute('aria-label', t); }
 }
 
 // ---------------- Rejoindre ----------------
@@ -504,6 +508,7 @@ function dock() {
     db('dMic', 'mic', 'Micro', () => setMic(!S.mic)),
     db('dCam', 'cam', 'Caméra', () => setCam(!S.cam)),
     canScreen ? db('dScreen', 'screen', 'Partager l\'écran', toggleScreen, 'hide-m') : null,
+    db('dBoard', 'board', 'Tableau blanc', toggleBoard, 'hide-m'),
     db('dHand', 'hand', 'Lever la main (H)', toggleHand),
     db('dReact', 'smile', 'Réagir', e => emojiPopover(e.currentTarget, em => sendFlash(em))),
     h('span', { class: 'sep hide-m' }),
@@ -538,6 +543,7 @@ function moreMenu(anchor) {
     it('qr', 'Inviter (lien + QR code)', openInvite),
     it('users', 'Participants', () => togglePanel('people', true)),
     isMobile() && canScreen ? it('screen', 'Partager l\'écran', toggleScreen) : null,
+    isMobile() ? it('board', !S.wb ? 'Tableau blanc' : isBoardOwner() ? 'Fermer le tableau blanc' : 'Afficher le tableau blanc', toggleBoard) : null,
     isMobile() ? it('flip', 'Changer de caméra', flipCamera) : null,
     document.pictureInPictureEnabled ? it('pip', 'Image dans l\'image', pip) : null,
     document.fullscreenEnabled ? it('full', document.fullscreenElement ? 'Quitter le plein écran' : 'Plein écran', fullscreen) : null,
@@ -727,7 +733,7 @@ function togglePanel(tab, show = true) {
   $('#chatPane').hidden = tab !== 'chat'; $('#peoplePane').hidden = tab !== 'people';
   if (show && tab === 'chat') { S.unread = 0; refreshUnread(); const m = $('#msgs'); m.scrollTop = m.scrollHeight; if (!isMobile()) $('#chatIn').focus(); }
   if (tab === 'people') renderPeople();
-  refreshButtons(); setTimeout(layout, 0);
+  refreshButtons(); setTimeout(layout, 0); setTimeout(checkSeen, 50);
 }
 function refreshUnread() { const u = $('#unread'); if (u) { u.hidden = !S.unread; u.textContent = S.unread > 9 ? '9+' : S.unread; } }
 let lastTyping = 0;
@@ -742,7 +748,7 @@ function hhmm(ts) { return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-d
 function renderMsg(m) {
   if (m.kind === 'system') return h('div', { class: 'sysmsg', dataset: { id: m.id } }, `${m.text} · ${hhmm(m.ts)}`);
   if (m.kind === 'ai') return h('div', { class: 'ai', dataset: { id: m.id } }, h('div', { class: 'h' }, icon('sparkle'), 'Résumé · assistant local (Olla)'), h('div', { class: 'tx' }, renderMarkdown(m.text)));
-  const mine = m.from?.id === S.me?.id;
+  const mine = !!m.own || m.from?.id === S.me?.id;
   if (m.bad) return h('div', { class: 'sysmsg bad', dataset: { id: m.id } }, icon('lock'), ` Message de ${m.from?.name || '?'} illisible : il n'a pas été chiffré avec la clé de ce salon. · ${hhmm(m.ts)}`);
   const body = h('div', { class: 'b' }, h('div', { class: 'hd' }, h('b', {}, m.from?.name || '?'), h('span', {}, hhmm(m.ts))));
   if (m.replyTo) body.append(h('div', { class: 'quote' }, `${m.replyTo.name} : ${m.replyTo.excerpt}`));
@@ -759,6 +765,7 @@ function renderMsg(m) {
     ['👍', '❤️', '😂'].map(e => h('button', { title: 'Réagir ' + e, onclick: () => sendMsgReact(m, e) }, e)),
     h('button', { title: 'Répondre', onclick: () => setReply(m) }, icon('reply')),
     m.text ? h('button', { title: 'Copier', onclick: () => navigator.clipboard?.writeText(m.text).then(() => toast('Copié')) }, icon('copy')) : null);
+  if (mine) body.append(seenLine(m.id));
   const el = h('div', { class: 'msg' + (mine ? ' mine' : ''), dataset: { id: m.id, author: m.from?.id || '', ts: String(m.ts || 0) } }, avatar(m.from?.name || '?'), body, acts);
   el.addEventListener('click', () => { $$('.msg.focus').forEach(x => x !== el && x.classList.remove('focus')); el.classList.toggle('focus'); });
   return el;
@@ -775,6 +782,7 @@ function addMsg(m, { history = false } = {}) {
   if (el.classList.contains('msg') && prev?.classList.contains('msg') && prev.dataset.author && prev.dataset.author === el.dataset.author
     && Math.abs(+el.dataset.ts - +prev.dataset.ts) < 300000 && !m.replyTo) el.classList.add('cont');
   box.append(el);
+  if (el.classList.contains('msg')) { if (el.classList.contains('mine')) refreshSeen(); else watchSeen(el); }
   if (nearBottom || m.from?.id === S.me?.id) box.scrollTop = box.scrollHeight;
   if (!history && m.kind !== 'system' && m.from?.id !== S.me?.id) {
     S.typing.delete(m.from?.id);
@@ -821,6 +829,150 @@ function renderPeople() {
   $('#tab-people').replaceChildren(icon('users'), 'Personnes', h('span', { class: 'n' }, String(list.length)));
 }
 
+// ---------------- Accusés de lecture « Vu » ----------------
+// Un message n'est déclaré lu que s'il est réellement visible : onglet au premier plan, panneau Messages ouvert
+// (tiroir sur mobile) et message affiché à au moins 60 % (IntersectionObserver). Envois groupés, une fois par id.
+const seenSent = new Set(), seenQ = new Set(), seenVis = new Set();
+let seenObs = null, seenT = 0;
+function chatVisible() { return !document.hidden && S.panel && S.tab === 'chat' && !$('#panel')?.hidden && !$('#chatPane')?.hidden; }
+function watchSeen(el) {
+  const id = el.dataset.id; if (!id || seenSent.has(id) || !('IntersectionObserver' in window)) return;
+  seenObs ||= new IntersectionObserver(es => {
+    for (const e of es) { if (e.isIntersecting && e.intersectionRatio >= 0.6) seenVis.add(e.target); else seenVis.delete(e.target); }
+    checkSeen();
+  }, { root: $('#msgs'), threshold: [0, 0.6] });
+  seenObs.observe(el);
+}
+function checkSeen() {
+  if (!seenObs || !chatVisible()) return;
+  for (const el of seenVis) {
+    seenVis.delete(el); seenObs.unobserve(el);
+    const id = el.dataset.id; if (el.isConnected && !seenSent.has(id)) { seenSent.add(id); seenQ.add(id); }
+  }
+  if (seenQ.size && !seenT) seenT = setTimeout(flushSeen, 800);
+}
+function flushSeen() {
+  seenT = 0; if (!seenQ.size) return;
+  const ids = [...seenQ].slice(0, 50); ids.forEach(id => seenQ.delete(id));
+  S.engine?.send({ t: 'seen', ids });
+  if (seenQ.size) seenT = setTimeout(flushSeen, 800);
+}
+function resetSeen() { seenObs?.disconnect(); seenObs = null; seenVis.clear(); seenSent.clear(); seenQ.clear(); clearTimeout(seenT); seenT = 0; }
+document.addEventListener('visibilitychange', () => checkSeen());
+function seenLine(id) {
+  const el = h('button', { type: 'button', class: 'seen', hidden: true, dataset: { seen: id }, onclick: e => { e.stopPropagation(); el.classList.toggle('open'); el.setAttribute('aria-expanded', String(el.classList.contains('open'))); } });
+  return el;
+}
+// Sous ses propres messages : « Vu » sur le dernier message lu, et sur un message plus ancien seulement si ses lecteurs diffèrent.
+function refreshSeen() {
+  const lines = $$('#msgs .msg.mine .seen');
+  let next = null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const el = lines[i], names = S.seen.get(el.dataset.seen) || [];
+    const key = [...names].sort().join('\u0001');
+    const show = names.length > 0 && key !== next;
+    if (names.length) next = key;
+    if (!show) { el.hidden = true; continue; }
+    const label = names.length === 1 ? `Vu par ${names[0]}` : `Vu par ${names.length}`;
+    if (el.dataset.key !== key) {
+      const was = !el.hidden && el.dataset.key;
+      el.dataset.key = key; el.title = 'Vu par ' + names.join(', '); el.setAttribute('aria-label', el.title);
+      el.replaceChildren(icon('checks'), h('span', { class: 'sl' }, label), h('span', { class: 'who' }, names.join(', ')));
+      if (was) { el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
+    }
+    el.hidden = false;
+  }
+}
+
+// ---------------- Tableau blanc ----------------
+// Un seul tableau par salon, partagé comme un écran : il prend la grande vue (mode orateur) pour tout le monde,
+// à côté des éventuels partages d'écran ; un double-clic sur une autre tuile l'épingle à sa place.
+function isBoardOwner() { return !!S.wb && S.wb.meta?.owner === S.me?.id; }
+let wbOut = Promise.resolve(), wbIn = Promise.resolve();
+function boardSend(op, s, extra = {}) {
+  const e2 = S.e2?.keys;
+  if (!e2 || op === 'undo') { S.engine?.send({ t: 'wb', op, ...(s ? { s } : {}), ...extra }); return; }
+  // chiffré : l'ordre des fragments est préservé (chaîne de promesses)
+  wbOut = wbOut.then(async () => {
+    const enc = await e2.seal(s, op === 'live' ? 'wbl' : 'wb:' + s.id);
+    if (enc.length > 12000) return;
+    S.engine?.send({ t: 'wb', op, id: s.id, enc, ...(op === 'live' ? { n: s.n } : {}) });
+  }).catch(e => stats.errors.push('wb ' + e.message));
+}
+async function openStroke(it, live = false) {
+  if (it.s) return validStroke(it.s, { live }) ? it.s : null;
+  if (!S.e2?.keys || typeof it.enc !== 'string') return null;
+  try { const d = await S.e2.keys.open(it.enc, live ? 'wbl' : 'wb:' + it.id); return validStroke(d, { live }) && d.id === it.id ? d : null; } catch { return null; }
+}
+function ensureBoardView() {
+  if (S.wb.view) return S.wb.view;
+  S.wb.view = new BoardView({
+    send: boardSend, meta: () => S.wb?.meta, isOwner: isBoardOwner,
+    name: id => S.peers.get(id)?.name || '?',
+    onLock: on => S.engine?.send({ t: 'wb', op: 'lock', on }),
+    onClear: () => confirmBoard('Tout effacer ?', 'Le dessin disparaît pour tout le monde. Pense à l\'exporter en PNG si tu veux le garder.', 'Tout effacer', () => S.engine?.send({ t: 'wb', op: 'clear' })),
+    onClose: () => confirmBoard('Fermer le tableau blanc ?', 'Il disparaît pour tout le monde. Pense à l\'exporter en PNG si tu veux le garder.', 'Fermer', () => S.engine?.send({ t: 'wb', op: 'close' })),
+  });
+  return S.wb.view;
+}
+function confirmBoard(title, text, ok, fn) {
+  const bg = modal(title, h('p', { class: 'muted' }, text),
+    h('div', { class: 'crow end' }, h('button', { class: 'btn', onclick: () => bg.querySelector('h3 .iconbtn').click() }, 'Annuler'),
+      h('button', { class: 'btn danger', onclick: () => { fn(); bg.querySelector('h3 .iconbtn').click(); } }, ok)));
+}
+function toggleBoard() {
+  if (!S.wb) { S.pinned = null; S.engine?.send({ t: 'wb', op: 'open' }); return; }
+  const spotted = !S.pinned || S.pinned === 'wb';
+  if (!spotted) { S.pinned = null; layout(); return; }
+  if (isBoardOwner()) S.wb.view?.ctx.onClose();
+  else toast(`Seul ${S.wb.meta?.ownerName || 'son ouvreur'} peut fermer ce tableau blanc.`);
+}
+function closeBoardLocal() {
+  S.wb?.view?.destroy(); const t = S.tiles.get('wb'); t?.el.remove(); S.tiles.delete('wb');
+  if (S.pinned === 'wb') S.pinned = null; S.wb = null;
+}
+function onBoardMsg(m) {
+  switch (m.op) {
+    case 'open': case 'state': {
+      closeBoardLocal();
+      S.wb = { meta: m.board };
+      const v = ensureBoardView();
+      if (m.op === 'state' && m.items?.length) {
+        const items = m.items;
+        wbIn = wbIn.then(async () => { const list = (await Promise.all(items.map(it => openStroke(it)))).filter(Boolean); if (S.wb?.view === v) v.setAll(list); });
+      }
+      layout(); refreshButtons(); break;
+    }
+    case 'meta': if (S.wb) { S.wb.meta = m.board; S.wb.view?.paint(); updateBoardTile(); refreshButtons(); } break;
+    case 'close': closeBoardLocal(); layout(); refreshButtons(); break;
+    case 'clear': S.wb?.view?.clear(); break;
+    case 'del': wbIn = wbIn.then(() => S.wb?.view?.removeIds(m.ids || [])); break;
+    case 'add': case 'live': {
+      const v = S.wb?.view; if (!v) return;
+      wbIn = wbIn.then(async () => {
+        const s = await openStroke(m, m.op === 'live'); if (!s || S.wb?.view !== v) return;
+        if (m.op === 'add') v.addItem(s, m.from); else v.onLive(m.from, s);
+      });
+      break;
+    }
+  }
+}
+function boardTile() {
+  const v = ensureBoardView();
+  const lab = h('div', { class: 'lab' });
+  const el = h('div', { class: 'tile board', dataset: { key: 'wb' } }, v.el, lab);
+  el.addEventListener('click', () => { if (el.classList.contains('small')) { S.pinned = 'wb'; layout(); } });
+  const t = { key: 'wb', el, lab, kind: 'board', peer: null, isMe: false };
+  S.tiles.set('wb', t); updateBoardTile(); return t;
+}
+function updateBoardTile() {
+  const t = S.tiles.get('wb'); if (!t || !S.wb) return;
+  const m = S.wb.meta || {};
+  t.lab.replaceChildren(icon(m.locked ? 'lock' : 'board'), isBoardOwner() ? 'Ton tableau blanc' : `Tableau blanc de ${m.ownerName || '?'}`);
+  const small = t.el.classList.contains('small');
+  if (S.wb.view) { S.wb.view.enabled = !small; S.wb.view.paint(); }
+}
+
 // ---------------- Tuiles ----------------
 function makeTile(key, peer, kind) {
   const isMe = peer.id === S.me?.id;
@@ -835,6 +987,7 @@ function makeTile(key, peer, kind) {
 }
 function updateTile(t) {
   if (!t) return;
+  if (t.kind === 'board') return updateBoardTile();
   const p = t.peer, live = performance.now() - t.lastFrame < 2500;
   if (t.isMe && t.kind === 'cam') { t.ph.hidden = !!(S.cam && S.stream?.getVideoTracks().length); }
   else t.ph.hidden = t.kind === 'screen' || (p.state.cam && live);
@@ -853,15 +1006,17 @@ function layout() {
   // tuiles nécessaires
   const want = new Set();
   for (const p of S.peers.values()) { want.add('p:' + p.id); if (p.state.screen && p.id !== S.me.id) want.add('s:' + p.id); }
+  if (S.wb) want.add('wb');
   for (const [k, t] of S.tiles) if (!want.has(k)) { t.el.remove(); S.tiles.delete(k); }
-  for (const k of want) if (!S.tiles.has(k)) { const p = S.peers.get(k.slice(2)); makeTile(k, p, k[0] === 's' ? 'screen' : 'cam'); }
+  for (const k of want) if (!S.tiles.has(k)) { if (k === 'wb') { boardTile(); continue; } const p = S.peers.get(k.slice(2)); makeTile(k, p, k[0] === 's' ? 'screen' : 'cam'); }
   // ordre stable des personnes distantes ; les orateurs récents remontent en première page
   const remote = [...S.peers.values()].filter(p => p.id !== S.me.id);
   S.order = S.order.filter(id => S.peers.has(id) && id !== S.me.id);
   for (const p of remote) if (!S.order.includes(p.id)) S.order.push(p.id);
   const me = S.tiles.get('p:' + S.me.id);
   const screens = [...S.tiles.values()].filter(t => t.kind === 'screen');
-  let spotKey = S.pinned && S.tiles.has(S.pinned) ? S.pinned : screens[0]?.key || null;
+  const board = S.tiles.get('wb');
+  let spotKey = S.pinned && S.tiles.has(S.pinned) ? S.pinned : board ? 'wb' : screens[0]?.key || null;
   // Mode « orateur » : la personne qui parle (ou la première) en grand, les autres en bande dessous
   if (!spotKey && S.view === 'speaker' && remote.length) {
     const sp = S.bySid.get(S.speakerSid);
@@ -886,10 +1041,10 @@ function layout() {
     const spot = S.tiles.get(spotKey);
     grid.className = 'grid spot'; $('#waitHint')?.remove();
     const strip = h('div', { class: 'strip' });
-    const others = [me, ...S.order.map(id => S.tiles.get('p:' + id))].filter(t => t && t !== spot);
-    others.slice(0, 12).forEach(t => { t.el.classList.add('small'); strip.append(t.el); sub(t, L_LO); });
+    const others = [board, me, ...S.order.map(id => S.tiles.get('p:' + id))].filter(t => t && t !== spot);
+    others.slice(0, 12).forEach(t => { t.el.classList.add('small'); strip.append(t.el); if (t.kind !== 'board') sub(t, L_LO); });
     grid.append(spot.el, strip); spot.el.classList.remove('small');
-    if (spot.kind === 'screen') sub(spot, L_SCREEN); else big(spot, true);
+    if (spot.kind === 'screen') sub(spot, L_SCREEN); else if (spot.kind !== 'board') big(spot, true);
     visible = [spot, ...others];
   } else if (remote.length === 0) {
     grid.append(me.el); grid.style.gridTemplateColumns = '1fr'; visible = [me];
@@ -935,6 +1090,7 @@ const UI = {
         S.me = { ...m.you }; S.peers.clear(); S.bySid.clear();
         for (const p of [m.you, ...m.peers]) { S.peers.set(p.id, { ...p }); S.bySid.set(p.sid, S.peers.get(p.id)); }
         S.me = S.peers.get(m.you.id); S.speakerSid = m.speaker; S.info.limit = m.room.limit; S.info.ai = m.ai;
+        closeBoardLocal(); resetSeen();
         for (const t of S.tiles.values()) t.el.remove(); S.tiles.clear();
         const box = $('#msgs'); box.replaceChildren(); S.msgs.clear();
         if (!m.history.length) box.append(h('div', { class: 'sysmsg' }, 'Début de la discussion. Les messages restent dans le salon pour les prochaines visites.'));
@@ -959,6 +1115,15 @@ const UI = {
         if (scr !== p.state.screen) layout(); else { for (const t of S.tiles.values()) if (t.peer === p) updateTile(t); layout(); }
         renderPeople(); break;
       }
+      case 'seen': {
+        for (const it of Array.isArray(m.items) ? m.items : []) {
+          if (typeof it?.id !== 'string' || !Array.isArray(it.by)) continue;
+          S.seen.delete(it.id); S.seen.set(it.id, it.by.filter(x => typeof x === 'string').slice(0, 30).map(x => x.slice(0, 40)));
+          if (S.seen.size > 400) S.seen.delete(S.seen.keys().next().value);
+        }
+        refreshSeen(); break;
+      }
+      case 'wb': onBoardMsg(m); break;
       case 'hand': toast([icon('hand'), `${m.name} lève la main`]); break;
       case 'chat': if (m.msg.enc) { const x = m.msg; queueMsg(async () => addMsg(await openMsg(x))); } else addMsg(m.msg); break;
       case 'msgreact': {

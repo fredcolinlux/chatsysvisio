@@ -6,6 +6,7 @@
 import crypto from 'node:crypto';
 import { T_VIDEO, T_AUDIO, LAYERS, HEADER, setSid, peekType, peekLayer, peekKey, peekLevel, PROTO } from '../public/js/protocol.js';
 import { degradeLayer, HEIGHTS } from '../public/js/quality.js';
+import { validStroke, cleanStroke, LIMITS as WB, ID_RE as WB_ID } from '../public/js/board-model.js';
 
 export const VIDEO_HIGH_WATER = 768 * 1024;  // octets en attente sur la socket d'un destinataire
 export const AUDIO_HIGH_WATER = 1536 * 1024;
@@ -18,10 +19,13 @@ const clampStr = (s, n) => String(s ?? '').replace(/[\u0000-\u001f\u007f]/g, ' '
 // Chaîne opaque (base64url) produite par le client : seule sa forme et sa taille sont vérifiées.
 const isEnc = (v, max) => typeof v === 'string' && v.length > 0 && v.length <= max && /^[A-Za-z0-9_-]+$/.test(v);
 // Message tel qu'envoyé aux clients : sans les clés internes de réaction (rx, et les clés de erx).
-const publicMsg = ({ rx, erx, ...m }) => (erx ? { ...m, erx: Object.values(erx) } : m);
+const publicMsg = ({ rx, erx, ark, ...m }) => (erx ? { ...m, erx: Object.values(erx) } : m);
+// Accusés de lecture : au plus SEEN_MSGS messages suivis par salon, en mémoire (oubliés quand le salon se vide).
+const SEEN_MSGS = 400, SEEN_PER_MSG = 30;
+const OWNER_GRACE_MS = 20000; // tableau blanc : délai pour que son ouvreur revienne après une coupure
 
 class RoomState {
-  constructor(room) { this.room = room; this.peers = new Map(); this.nextSid = 1; this.speaker = 0; this.speakerAt = 0; this.top = new Set(); }
+  constructor(room) { this.room = room; this.peers = new Map(); this.nextSid = 1; this.speaker = 0; this.speakerAt = 0; this.top = new Set(); this.seen = new Map(); this.board = null; }
   others(p) { return [...this.peers.values()].filter(x => x !== p); }
 }
 
@@ -87,6 +91,8 @@ export class Hub {
       this.system(rs, `${p.name} a quitté le salon`);
     }
     for (const o of rs.peers.values()) { o.subs.forEach(k => { if (k.startsWith(p.sid + ':')) o.subs.delete(k); }); this.recomputeEff(o); }
+    // Ouvreur du tableau parti : on lui laisse un court délai pour revenir (coupure réseau), sinon le tableau se ferme.
+    if (rs.board?.owner === p.id) { rs.board.owner = null; rs.board.orphanUntil = Date.now() + OWNER_GRACE_MS; this.broadcast(rs, { t: 'wb', op: 'meta', board: this.boardMeta(rs) }); }
     this.store.touch(rs.room);
     if (rs.peers.size === 0) this.rooms.delete(rs.room.id); else { this.recomputeCodecs(rs); this.recomputeNeeds(rs); }
   }
@@ -128,10 +134,16 @@ export class Hub {
           aenc: arr(c.aenc, ['opus']), adec: [...new Set(['adpcm', ...arr(c.adec, ['opus'])])] };
         Object.assign(p.state, this.cleanState(m.state));
         this.send(p, { t: 'welcome', you: this.peerInfo(p), room: { name: rs.room.name, slug: rs.room.slug, isPublic: rs.room.isPublic, hasPassword: !!rs.room.passwordHash, limit: this.limitOf(rs.room), e2ee: rs.room.e2ee ? rs.room.e2ee.mode : null },
-          peers: rs.others(p).filter(o => o.hello).map(o => this.peerInfo(o)), history: this.store.messages(rs.room).slice(-150).map(publicMsg),
+          peers: rs.others(p).filter(o => o.hello).map(o => this.peerInfo(o)), history: this.store.messages(rs.room).slice(-150).map(x => x.ark && x.ark === p.rk ? { ...publicMsg(x), own: true } : publicMsg(x)),
           bitrates: { hi: this.cfg.videoHiKbps, lo: this.cfg.videoLoKbps, screen: this.cfg.screenKbps, hd720: this.cfg.video720Kbps, hd1080: this.cfg.video1080Kbps, screenHd: this.cfg.screenHdKbps },
           maxHeight: this.cfg.videoMaxHeight, ai: this.cfg.aiEnabled && !rs.room.e2ee, speaker: rs.speaker,
           server: { version: this.cfg.version, build: this.cfg.build, proto: PROTO } });
+        this.sendOwnSeen(p);
+        // Tableau blanc en cours : l'ouvreur qui revient le reprend ; tout arrivant reçoit l'état complet (rejoué).
+        if (rs.board) {
+          if (!rs.board.owner && rs.board.ownerRk === p.rk) { rs.board.owner = p.id; rs.board.orphanUntil = 0; this.broadcast(rs, { t: 'wb', op: 'meta', board: this.boardMeta(rs) }, p); }
+          this.send(p, { t: 'wb', op: 'state', board: this.boardMeta(rs), items: rs.board.items.map(it => it.pub) });
+        }
         this.broadcast(rs, { t: 'join', peer: this.peerInfo(p) }, p);
         this.system(rs, `${p.name} a rejoint le salon`);
         this.onEvent('connexion', `${p.name} a rejoint « ${rs.room.name} »`, { room: rs.room.slug, ip: p.ip, account: p.account ? p.name : undefined });
@@ -157,6 +169,8 @@ export class Hub {
       }
       case 'keyreq': { const o = [...rs.peers.values()].find(x => x.sid === m.sid); if (o) { p.needKey.add(`${o.sid}:${m.layer | 0}`); this.requestKey(o, m.layer | 0); } return; }
       case 'chat': return this.onChat(p, m);
+      case 'seen': return this.onSeen(p, m);
+      case 'wb': return this.onBoard(p, m);
       case 'msgreact': {
         if (rs.room.e2ee) return this.onEncReact(p, m);
         if (!EMOJIS.has(m.emoji)) return;
@@ -235,7 +249,7 @@ export class Hub {
       if (!isEnc(m.enc, 18000) || (m.text != null && m.text !== '') || m.fileId) return this.send(p, { t: 'error', code: 'e2ee', message: 'Message non chiffré refusé dans un salon chiffré de bout en bout.' });
       p.chatTimes.push(now);
       const msg = this.store.addMessage(rs.room, { id: crypto.randomBytes(8).toString('hex'), ts: now, kind: 'user',
-        from: { id: p.id, name: p.name }, enc: m.enc, reactions: {}, cid: clampStr(m.cid, 24) || undefined });
+        from: { id: p.id, name: p.name }, enc: m.enc, reactions: {}, cid: clampStr(m.cid, 24) || undefined, ark: p.rk });
       this.store.touch(rs.room);
       this.broadcast(rs, { t: 'chat', msg: publicMsg(msg) });
       return;
@@ -254,9 +268,100 @@ export class Hub {
       if (t) replyTo = { id: t.id, name: t.from?.name || 'Système', excerpt: (t.text || t.file?.name || '').slice(0, 80) };
     }
     const msg = this.store.addMessage(rs.room, { id: crypto.randomBytes(8).toString('hex'), ts: now, kind: 'user',
-      from: { id: p.id, name: p.name }, text, file, replyTo, reactions: {}, cid: clampStr(m.cid, 24) || undefined });
+      from: { id: p.id, name: p.name }, text, file, replyTo, reactions: {}, cid: clampStr(m.cid, 24) || undefined, ark: p.rk });
     this.store.touch(rs.room);
-    this.broadcast(rs, { t: 'chat', msg });
+    this.broadcast(rs, { t: 'chat', msg: publicMsg(msg) });
+  }
+
+  // ---- Accusés de lecture « Vu » ----
+  // Le lecteur est toujours la connexion qui envoie (impossible d'accuser lecture au nom d'un autre) ; seuls les
+  // messages existants, écrits par quelqu'un d'autre, sont acceptés. Le résultat n'est envoyé qu'à l'auteur.
+  // Salon chiffré : le serveur ne voit que des identifiants de message opaques et le nom (déjà connu de lui) du lecteur.
+  onSeen(p, m) {
+    const rs = p.rs;
+    if (!p.hello || !this.rate(p, 'seen', 4) || !Array.isArray(m.ids)) return;
+    const ids = [...new Set(m.ids.filter(x => typeof x === 'string' && /^[0-9a-f]{16}$/.test(x)))].slice(0, 50);
+    if (!ids.length) return;
+    const byId = new Map(this.store.messages(rs.room).map(x => [x.id, x]));
+    const out = new Map(); // auteur (rk) → [{ id, by }]
+    for (const id of ids) {
+      const msg = byId.get(id);
+      if (!msg || msg.kind !== 'user' || !msg.ark || msg.ark === p.rk) continue;
+      let who = rs.seen.get(id);
+      if (!who) {
+        who = new Map(); rs.seen.set(id, who);
+        if (rs.seen.size > SEEN_MSGS) rs.seen.delete(rs.seen.keys().next().value);
+      }
+      if (who.get(p.rk) === p.name || (!who.has(p.rk) && who.size >= SEEN_PER_MSG)) continue;
+      who.set(p.rk, p.name);
+      const l = out.get(msg.ark) || []; l.push({ id, by: [...who.values()] }); out.set(msg.ark, l);
+    }
+    for (const [ark, items] of out) for (const o of rs.peers.values()) if (o.rk === ark && o.hello) this.send(o, { t: 'seen', items });
+  }
+  sendOwnSeen(p) {
+    const rs = p.rs, items = [];
+    for (const msg of this.store.messages(rs.room).slice(-150)) {
+      if (msg.ark !== p.rk) continue;
+      const who = rs.seen.get(msg.id); if (who?.size) items.push({ id: msg.id, by: [...who.values()] });
+    }
+    if (items.length) this.send(p, { t: 'seen', items });
+  }
+
+  // ---- Tableau blanc partagé ----
+  // Traits vectoriels relayés par le WebSocket (aucun flux vidéo), conservés en mémoire tant que le tableau est ouvert,
+  // et rejoués pour qui arrive. Salon chiffré : chaque trait est opaque (enc), seul son identifiant est visible.
+  boardMeta(rs) {
+    const b = rs.board; if (!b) return null;
+    return { owner: b.owner, ownerName: b.ownerName, locked: b.locked, away: !b.owner, n: b.items.length };
+  }
+  onBoard(p, m) {
+    const rs = p.rs, b = rs.board, e2 = !!rs.room.e2ee;
+    if (!p.hello || typeof m.op !== 'string') return;
+    const isOwner = b && b.owner === p.id;
+    const canDraw = b && (!b.locked || isOwner);
+    const lim = k => this.rate(p, 'wb-' + k, WB.rate[k]);
+    switch (m.op) {
+      case 'open': {
+        if (!lim('meta')) return;
+        if (b) return this.send(p, { t: 'error', code: 'wb', message: `Un tableau blanc est déjà ouvert par ${b.ownerName}.` });
+        rs.board = { owner: p.id, ownerRk: p.rk, ownerName: p.name, locked: false, items: [], ids: new Set(), bytes: 0, orphanUntil: 0 };
+        this.broadcast(rs, { t: 'wb', op: 'open', board: this.boardMeta(rs) });
+        this.system(rs, `${p.name} a ouvert un tableau blanc`);
+        return;
+      }
+      case 'close': case 'clear': case 'lock': {
+        if (!isOwner || !lim('meta')) return;
+        if (m.op === 'close') { rs.board = null; this.broadcast(rs, { t: 'wb', op: 'close' }); this.system(rs, `${p.name} a fermé le tableau blanc`); return; }
+        if (m.op === 'clear') { b.items = []; b.ids.clear(); b.bytes = 0; this.broadcast(rs, { t: 'wb', op: 'clear' }); return; }
+        b.locked = !!m.on; this.broadcast(rs, { t: 'wb', op: 'meta', board: this.boardMeta(rs) }); return;
+      }
+      case 'add': case 'live': {
+        if (!canDraw || !lim(m.op)) return;
+        let pub;
+        if (e2) {
+          if (typeof m.id !== 'string' || !WB_ID.test(m.id) || !isEnc(m.enc, WB.enc)) return;
+          pub = { id: m.id, from: p.id, enc: m.enc, ...(m.op === 'live' ? { n: m.n | 0 } : {}) };
+        } else {
+          if (!validStroke(m.s, { live: m.op === 'live' })) return;
+          pub = { id: m.s.id, from: p.id, s: m.op === 'live' ? { ...cleanStroke(m.s), n: m.s.n } : cleanStroke(m.s) };
+        }
+        if (m.op === 'live') { this.broadcast(rs, { t: 'wb', op: 'live', ...pub }, p); return; }
+        if (b.ids.has(pub.id)) return;
+        const size = JSON.stringify(pub).length;
+        if (b.items.length >= WB.items || b.bytes + size > WB.bytes) return this.send(p, { t: 'error', code: 'wb-full', message: 'Tableau plein : efface-le (ou ouvre-en un nouveau) pour continuer.' });
+        b.items.push({ id: pub.id, by: p.rk, size, pub }); b.ids.add(pub.id); b.bytes += size;
+        this.broadcast(rs, { t: 'wb', op: 'add', ...pub }, p);
+        return;
+      }
+      case 'undo': {
+        if (!b || !lim('undo') || !Array.isArray(m.ids)) return;
+        const want = new Set(m.ids.slice(0, WB.undo).filter(x => typeof x === 'string' && WB_ID.test(x)));
+        const del = [];
+        b.items = b.items.filter(it => { if (want.has(it.id) && it.by === p.rk) { del.push(it.id); b.ids.delete(it.id); b.bytes -= it.size; return false; } return true; });
+        if (del.length) this.broadcast(rs, { t: 'wb', op: 'del', ids: del }, p);
+        return;
+      }
+    }
   }
 
   postAi(room, text) {
@@ -388,6 +493,10 @@ export class Hub {
   tick() {
     const now = Date.now();
     for (const rs of this.rooms.values()) {
+      if (rs.board && !rs.board.owner && rs.board.orphanUntil < now) {
+        const n = rs.board.ownerName; rs.board = null;
+        this.broadcast(rs, { t: 'wb', op: 'close' }); this.system(rs, `Tableau blanc de ${n} fermé (parti du salon)`);
+      }
       const speaking = [...rs.peers.values()].filter(p => p.state.mic && now - p.lastAudio < 1000);
       for (const p of rs.peers.values()) if (now - p.lastAudio > 600) p.lvl *= 0.5;
       speaking.sort((a, b) => b.lvl - a.lvl);

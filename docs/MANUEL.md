@@ -1,6 +1,6 @@
 # ChatSysVisio — Manuel d'installation et d'utilisation
 
-*Version 1.6.0 · licence AGPL-3.0-or-later · fork de Camus*
+*Version 1.7.0 · licence AGPL-3.0-or-later · fork de Camus*
 
 ![Accueil](img/accueil-bureau.png)
 
@@ -17,10 +17,12 @@ Fonctions principales :
 - **chiffrement de bout en bout** des salons privés : vidéo, son, écran, chat, réactions et fichiers sont illisibles pour
   le serveur ; la clé est dans le lien (`#k=…`), jamais envoyée au serveur ;
 - vidéo jusqu'en **1080p** (Auto / 360p / 720p / 1080p / Éco), HD envoyée seulement à qui l'affiche en grand ;
-- mosaïque paginée ou **mode orateur**, partage d'écran, plein écran, image dans l'image ;
+- mosaïque paginée ou **mode orateur**, partage d'écran, **tableau blanc partagé** (croquis à plusieurs), plein écran,
+  image dans l'image ;
 - **flou** et **arrière-plans** (détourage MediaPipe exécuté dans le navigateur) ;
 - **traitement du micro** : réduction de bruit (RNNoise), compresseur et dé-esseur, activables séparément ;
-- chat : réponses, Markdown, réactions, **fichiers et images**, « … écrit » ; main levée, réactions ;
+- chat : réponses, Markdown, réactions, **fichiers et images**, « … écrit », **« Vu »** (accusés de lecture) ; main levée,
+  réactions ;
 - invitation par lien ou **QR code** (généré localement), appli installable (PWA), thème sombre / clair, mobile ;
 - **administration** (réseau local seulement, mot de passe + **TOTP**) ; **comptes** utilisateurs facultatifs.
 
@@ -228,11 +230,66 @@ Coût processeur (mesuré sur PC, `node scripts/micfx-bench.mjs`) : réduction d
 48 kHz ; si le navigateur tourne à 44,1 kHz (certains Mac, Firefox), l'effet est un peu moindre et c'est signalé. Sans
 WebAssembly, l'interrupteur affiche « indisponible » et le compresseur et le dé-esseur continuent de fonctionner.
 
+### « Vu » dans le chat (1.7)
+
+Sous **vos propres messages** apparaît une petite mention bleue : **« Vu par Bruno »** si une personne l'a lu,
+**« Vu par 3 »** si plusieurs. Survolez-la (ou touchez-la sur mobile) pour afficher la liste des noms. Pour ne pas
+encombrer la conversation, la mention n'est affichée que sous le dernier message lu, et sous un message plus ancien
+seulement si ses lecteurs sont différents.
+
+Un message ne compte comme **lu** que s'il a réellement été affiché chez l'autre personne : onglet du navigateur au
+premier plan, panneau **Messages** ouvert (le tiroir sur mobile) et message visible à l'écran. Recevoir un message
+panneau fermé, ou dans un onglet en arrière-plan, ne déclenche rien. Personne ne peut signaler une lecture au nom d'un
+autre : le serveur prend toujours le lecteur sur la connexion. Les accusés vivent en mémoire tant que le salon est
+occupé ; quand tout le monde est parti, ils sont oubliés (l'historique des messages, lui, reste). Dans un salon chiffré
+de bout en bout, l'accusé ne contient que l'identifiant du message, jamais son contenu.
+
+![« Vu » dans le chat](img/chat-vu-bureau.png)
+
+### Tableau blanc (1.7)
+
+Un tableau blanc partagé pour faire des croquis à plusieurs, **comme un partage d'écran** : bouton **Tableau blanc**
+dans le dock, juste à droite de « Partager l'écran » (sur mobile : menu « … » → **Tableau blanc**). Dès qu'il est ouvert,
+il s'affiche **en grand chez tout le monde** (mode orateur), les caméras passent en vignettes. Double-cliquez sur une
+vignette pour l'épingler à sa place ; un clic sur la vignette du tableau le remet en grand.
+
+| Outil | Rôle |
+|---|---|
+| Stylet | trait à main levée, lissé ; épaisseur variable selon la **pression** avec un stylet (iPad, Surface, tablette Wacom) |
+| Ligne, flèche, rectangle, ellipse | formes : appuyer, tirer, relâcher |
+| Gomme | efface ce qu'elle touche |
+| 5 couleurs, 3 épaisseurs | noir, bleu, rouge, vert, violet ; fin, moyen, épais |
+| Annuler / Rétablir | **chacun** annule ses propres traits (Ctrl+Z, Ctrl+Maj+Z), jamais ceux des autres |
+| Exporter en PNG | image 1920 × 1080 sur fond blanc, téléchargée par le navigateur |
+| Verrouiller | **réservé à la personne qui a ouvert le tableau** : elle seule peut alors dessiner, les autres regardent |
+| Tout effacer, Fermer | réservés à la personne qui a ouvert le tableau (avec confirmation) |
+
+Pendant qu'une autre personne dessine, son trait apparaît **en direct** avec une petite étiquette à son nom au bout du
+crayon. Qui arrive en cours de route reçoit le dessin complet. Le dessin est **vectoriel** (des coordonnées, pas une
+vidéo) : il reste net sur tous les écrans, du téléphone au grand écran, et consomme très peu (quelques Ko par trait).
+Il fonctionne à la souris, au doigt (Android, iPhone, iPad : la page ne défile pas pendant le dessin) et au stylet.
+
+Dans un salon **privé ou protégé par mot de passe**, chaque trait est **chiffré de bout en bout** comme le chat : le
+serveur ne voit que des données illisibles. Le tableau est conservé en mémoire tant qu'il est ouvert ; il disparaît à
+sa fermeture (pensez à **Exporter en PNG**). Si la personne qui l'a ouvert perd la connexion, elle a 20 secondes pour
+revenir et le reprendre ; sinon il se ferme.
+
+**Un seul tableau par salon** : c'est un espace commun, comme un tableau dans une salle de réunion ; deux tableaux
+partageraient l'attention et l'écran. Il cohabite en revanche avec les partages d'écran (on peut montrer un document et
+dessiner à côté), et c'est lui qui prend la grande vue tant que personne n'épingle autre chose.
+
+Limites : 5 000 traits ou 4 Mo de dessin par tableau (au-delà, « Tableau plein » : effacez ou exportez), débit limité
+par personne pour protéger le serveur.
+
+![Tableau blanc](img/tableau-blanc-bureau.png)
+
+![Tableau blanc sur mobile](img/tableau-blanc-mobile.png)
+
 ### Pendant l'appel
 
 | Action | Où |
 |---|---|
-| Micro, caméra, partage d'écran, main levée, réactions | dock en bas |
+| Micro, caméra, partage d'écran, **tableau blanc**, main levée, réactions | dock en bas (sur mobile : partage d'écran et tableau blanc dans le menu « … ») |
 | Chat, fichiers et images (10 Mo par défaut) | bouton bulle → onglet Messages ; trombone pour joindre |
 | Liste des personnes | onglet Personnes |
 | **Mode orateur** / grille | boutons en haut à droite |

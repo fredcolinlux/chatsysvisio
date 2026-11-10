@@ -57,6 +57,19 @@ ICONS.spot = '<rect x="3" y="4" width="13" height="16" rx="2"/><rect x="18" y="4
 ICONS.right = '<path d="M9 5l7 7-7 7"/>';
 ICONS.sparkle = ICONS.spark; ICONS.chat = ICONS.msg; ICONS.phone = ICONS.leave; ICONS.full = ICONS.expand; ICONS.vol = ICONS.speaker;
 const NS = 'http://www.w3.org/2000/svg';
+// Tableau blanc et accusés de lecture (1.7)
+ICONS.board = '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21l2-4M16 21l-2-4M7 13l3-3 2 2 4-4"/>';
+ICONS.pen = '<path d="M4 20l4-1L19 8a2.1 2.1 0 0 0-3-3L5 16z"/><path d="M14 7l3 3"/>';
+ICONS.eraser = '<path d="M8 20h12M4.5 14.5l8-8a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8L11 18H8z"/><path d="M8.5 10.5l5 5"/>';
+ICONS.line = '<path d="M5 19L19 5"/>';
+ICONS.rect = '<rect x="4" y="6" width="16" height="12" rx="1.5"/>';
+ICONS.ellipse = '<ellipse cx="12" cy="12" rx="8.5" ry="6"/>';
+ICONS.arrow = '<path d="M5 19L19 5M10 5h9v9"/>';
+ICONS.undo = '<path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>';
+ICONS.redo = '<path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>';
+ICONS.trash = '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>';
+ICONS.unlock = '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/>';
+ICONS.checks = '<path d="M2 12.5l4 4 8-9M10 16l1 .5 8-9"/>';
 export function icon(name, cls = 'i') {
   const s = document.createElementNS(NS, 'svg');
   s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', cls); s.setAttribute('aria-hidden', 'true');
