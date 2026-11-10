@@ -140,7 +140,7 @@ Il n'y a rien à migrer : Camus ne conserve ni comptes ni historique.
 ## 4. Mise à jour
 
 ```bash
-tar -xzf chatsysvisio-mise-a-jour-1.3.1-b8.tar.gz   # nom exact de l'archive (ou chatsysvisio-mise-a-jour.tar.gz)
+tar -xzf chatsysvisio-mise-a-jour-1.7.0-b3.tar.gz   # nom exact de l'archive (ou chatsysvisio-mise-a-jour.tar.gz)
 cd chatsysvisio-maj
 bash update.sh
 ```

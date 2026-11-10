@@ -348,6 +348,13 @@ Un code de secours remplace une fois le code TOTP à la connexion.
 tar -xzf chatsysvisio-<version>.tar.gz && cd chatsysvisio-<version> && bash update.sh
 ```
 
+Ou avec l'archive de **mise à jour** (même code, sans les tests), par exemple pour passer de 1.6.0 à 1.7.0 :
+
+```bash
+sha256sum -c chatsysvisio-mise-a-jour-1.7.0-b3.tar.gz.sha256
+tar -xzf chatsysvisio-mise-a-jour-1.7.0-b3.tar.gz && cd chatsysvisio-maj && bash update.sh
+```
+
 `update.sh` sauvegarde d'abord (`/var/backups/chatsysvisio/chatsysvisio-maj-DATE.tar.gz`), garde l'ancien code dans
 `/opt/chatsysvisio.prev` et revient automatiquement en arrière si la nouvelle version ne démarre pas. Ensuite, chaque
 participant recharge la page avec **Ctrl+F5** (Cmd+Maj+R sur Mac ; fermer / rouvrir l'onglet sur mobile).
