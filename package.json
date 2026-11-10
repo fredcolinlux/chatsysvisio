@@ -1,6 +1,6 @@
 {
   "name": "chatsysvisio",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "ChatSysVisio — visio + messagerie auto-hébergée, médias via WebSocket (443 uniquement). Dérivé de Camus (AGPL-3.0).",
   "license": "AGPL-3.0-or-later",
   "type": "module",
@@ -15,6 +15,7 @@
     "vendor": "node scripts/vendor.mjs"
   },
   "dependencies": {
+    "@lofcz/deepfilternet-web": "0.1.0",
     "@mediapipe/tasks-vision": "1.1.1",
     "@sapphi-red/web-noise-suppressor": "0.4.1",
     "qrcode-generator": "2.0.4",

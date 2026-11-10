@@ -12,14 +12,15 @@ export const DEESSER = Object.freeze({ lo: 5000, hi: 9000, threshold: -34, rel: 
 
 // Réglages enregistrés (localStorage 'csv-micfx') : quatre interrupteurs indépendants, tous coupés par défaut,
 // et les réglages de l'autotune (vitesse 0–100, tonalité -1 = chromatique ou 0 = Do … 11 = Si, mode mineur).
-export const FX_DEFAULTS = Object.freeze({ comp: false, deess: false, ns: false, tune: false, tuneSpeed: 50, tuneKey: -1, tuneMinor: false });
+export const FX_DEFAULTS = Object.freeze({ comp: false, deess: false, ns: false, tune: false, tuneSpeed: 50, tuneKey: -1, tuneMinor: false, iso: false, isoLevel: 60 });
 export function parseFx(raw) {
   let o = null; try { o = JSON.parse(raw); } catch {}
   const out = { ...FX_DEFAULTS };
   if (!o || typeof o !== 'object') return out;
-  for (const k of ['comp', 'deess', 'ns', 'tune', 'tuneMinor']) if (typeof o[k] === 'boolean') out[k] = o[k];
+  for (const k of ['comp', 'deess', 'ns', 'tune', 'tuneMinor', 'iso']) if (typeof o[k] === 'boolean') out[k] = o[k];
   if (Number.isFinite(o.tuneSpeed) && o.tuneSpeed >= 0 && o.tuneSpeed <= 100) out.tuneSpeed = Math.round(o.tuneSpeed);
   if (Number.isInteger(o.tuneKey) && o.tuneKey >= -1 && o.tuneKey <= 11) out.tuneKey = o.tuneKey;
+  if (Number.isFinite(o.isoLevel) && o.isoLevel >= 0 && o.isoLevel <= 100) out.isoLevel = Math.round(o.isoLevel);
   return out;
 }
 

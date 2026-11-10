@@ -1,7 +1,7 @@
 // WebKit (moteur de Safari / iPhone) et Firefox face à Chrome, dans le même salon, via le seul port HTTP(S).
 import { test, expect, chromium } from '@playwright/test';
 import fs from 'node:fs';
-import { createRoom, joinRoom, waitMedia, withQuery, expectAudible, measureMicFx, measureTune } from './helpers.mjs';
+import { createRoom, joinRoom, waitMedia, withQuery, expectAudible, measureMicFx, measureTune, measureIso } from './helpers.mjs';
 
 const chromeOpts = {
   executablePath: fs.existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : undefined,
@@ -72,7 +72,7 @@ test('traitement du micro : réduction de bruit, dé-esseur et compresseur actif
   expect(s.outDb - s.inDb).toBeLessThan(-6); expect(q.outDb - q.inDb).toBeGreaterThan(4);
   await w.evaluate(() => localStorage.setItem('csv-micfx', JSON.stringify({ ns: true, comp: true, deess: true })));
   await w.evaluate(() => window.__ccState.audio.setFx({ ns: true, tune: true, tuneSpeed: 50, tuneKey: -1, tuneMinor: false, comp: true, deess: true }));
-  await expect.poll(() => w.evaluate(() => ({ ...window.__ccState.audio.chain.status })), { timeout: 10_000 }).toEqual({ ns: 'on', tune: 'on', comp: 'on', deess: 'on' });
+  await expect.poll(() => w.evaluate(() => ({ ...window.__ccState.audio.chain.status })), { timeout: 10_000 }).toEqual({ ns: 'on', iso: 'off', tune: 'on', comp: 'on', deess: 'on' });
   if (micOk(browser)) await expectAudible(c); else await waitMedia(w, { video: 0, audio: 10 });
   await chrome.close(); await wctx.close();
 });
@@ -126,4 +126,35 @@ test('autotune : 450 Hz → 440 Hz, Si en Do majeur, latence ≤ 30 ms, bruit in
   await p.locator('.tuneset .tkey').first().selectOption('0');
   await expect(p.locator('.tuneset .tmode').first()).toBeVisible();
   await chrome.close(); await ctx.close();
+});
+
+test('isolateur de voix : musique et voix lointaine retirées dans les pauses, voix gardée, latence ≤ 41 ms', async ({ browser, baseURL }) => {
+  test.setTimeout(180_000);
+  const name = browser.browserType().name();
+  const ctx = name === 'webkit' ? await browser.newContext({ baseURL, permissions: ['camera', 'microphone'] }) : await browser.newContext({ baseURL });
+  const p = await ctx.newPage();
+  // page de l'appel (seule page dont la CSP autorise 'wasm-unsafe-eval')
+  const url = await createRoom(p, 'Isolateur ' + name + ' ' + Date.now());
+  await p.goto(url); await expect(p.locator('#joinBtn')).toBeVisible();
+  const ON = { ns: false, comp: false, deess: false, tune: false, iso: true, isoLevel: 60 };
+  for (const sr of [48000, 44100]) {
+    const m = await measureIso(p, ON, { sr, sec: 4, other: 'musique' });
+    const d = await measureIso(p, ON, { sr, sec: 4, other: 'lointaine', relDb: -14 });
+    console.log(name, sr, 'isolateur', m.st.iso, 'latence', m.latencyMs.toFixed(2), 'ms (annoncée', m.isoMs?.toFixed(2) + ')', 'musique pauses', m.pausesDb.toFixed(1), 'dB', 'voix', m.voiceDb.toFixed(2), 'dB', 'lointaine pauses', d.pausesDb.toFixed(1), 'dB', 'démarrage', Math.round(m.startMs), 'ms', 'rendu 4 s', Math.round(m.renderMs), 'ms', m.err || '');
+    expect(m.st.iso).toBe('on');
+    expect(m.latencyMs).toBeLessThanOrEqual(41); expect(Math.abs(m.latencyMs - m.isoMs)).toBeLessThan(0.5);
+    expect(m.pausesDb).toBeLessThan(-20); expect(Math.abs(m.voiceDb)).toBeLessThan(3);
+    expect(d.pausesDb).toBeLessThan(-6);
+  }
+  // interface : interrupteur et intensité
+  await p.goto(url); await expect(p.locator('#joinBtn')).toBeVisible();
+  await p.locator('.tg[data-fx=iso]').first().click();
+  await expect(p.locator('.isoset').first()).toBeVisible();
+  await expect(p.locator('.isoset .isonow').first()).toHaveText(/quand tu rejoins/);
+  await p.locator('.isoset .ilevel').first().fill('90');
+  await expect(p.locator('.isoset .tval').first()).toHaveText('90 · forte');
+  await expect(p.locator('.isoset .isowarn').first()).toBeHidden();
+  await p.locator('.tg[data-fx=tune]').first().click();
+  await expect(p.locator('.isoset .isowarn').first()).toContainText('Pour chanter');
+  await ctx.close();
 });

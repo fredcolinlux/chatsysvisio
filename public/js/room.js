@@ -2,7 +2,7 @@
 // chat (réponses, markdown, réactions, fichiers), participants, invitation (lien + QR local).
 import { $, $$, h, icon, api, toast, initChrome, renderSidebar, session, freshSession, ensureFresh, avatar, rememberRoom, myName, setMyName, fmtSize } from './common.js';
 import { Engine, AudioIO, detectCaps, stats } from './media.js';
-import { loadFx, saveFx, noiseSuppressionSupported, autotuneSupported } from './micfx.js';
+import { loadFx, saveFx, noiseSuppressionSupported, autotuneSupported, isolatorSupported, isoLoad } from './micfx.js';
 import { NOTE_NAMES } from './autotune.js';
 import { Effects, PRESETS, drawPreset } from './effects.js';
 import { renderMarkdown } from './markdown.js';
@@ -244,11 +244,13 @@ async function deviceSelects() {
   return wrap;
 }
 
-// ---------------- Traitement du micro (réduction de bruit, autotune, compresseur, dé-esseur) ----------------
-// Quatre interrupteurs indépendants, enregistrés dans ce navigateur et appliqués à chaud (le micro n'est pas rouvert).
-// Ordre de la chaîne : micro → réduction de bruit → autotune → compresseur → dé-esseur → Opus.
+// ---------- Traitement du micro (réduction de bruit, isolateur de voix, autotune, compresseur, dé-esseur) ----------
+// Cinq interrupteurs indépendants, enregistrés dans ce navigateur et appliqués à chaud (le micro n'est pas rouvert).
+// Ordre de la chaîne : micro → isolateur de voix (ou, s'il est coupé, réduction de bruit) → autotune → compresseur →
+// dé-esseur → Opus. L'isolateur inclut la réduction de bruit : RNNoise est alors mis en pause (pas de double traitement).
 const FX_ITEMS = [
   ['ns', 'Réduction de bruit', 'Souffle, clavier, ventilation (RNNoise, calculé sur ton appareil)'],
+  ['iso', 'Isolateur de voix', 'Garde ta voix : musique, télé, bruits et voix lointaines atténués (DeepFilterNet, calculé sur ton appareil)'],
   ['tune', 'Autotune', 'Ramène le chant sur la note juste la plus proche'],
   ['comp', 'Compresseur', 'Voix plus régulière : les passages faibles remontent, les forts sont tenus'],
   ['deess', 'Dé-esseur', 'Adoucit les « s » et « ch » qui sifflent (5–9 kHz)'],
@@ -257,6 +259,7 @@ async function setFx(k, on) {
   S.fx = { ...S.fx, [k]: on }; saveFx(S.fx); paintFx();
   const st = await S.audio?.setFx(S.fx);
   if (k === 'ns' && on && st?.ns === 'indisponible') toast('Réduction de bruit indisponible sur ce navigateur : seule celle du navigateur reste active.', { error: true });
+  if (k === 'iso' && on && st?.iso === 'indisponible') toast(`Isolateur de voix indisponible : ${S.audio?.chain?.isoError || 'navigateur non compatible'}. Le son passe sans isolation${S.fx.ns ? ' (la réduction de bruit reste active)' : ''}.`, { error: true });
   if (k === 'tune' && on && st?.tune === 'indisponible') toast('Autotune indisponible sur ce navigateur : le son passe sans correction.', { error: true });
   paintFx();
 }
@@ -308,10 +311,52 @@ function paintTune() {
     now.className = 'tunenow ' + cls;
   });
 }
+// Intensité de l'isolateur : transmise à chaud au module audio.
+function isoField() {
+  const lvl = h('input', { type: 'range', class: 'tspeed ilevel', min: 0, max: 100, step: 1, value: String(S.fx.isoLevel), 'aria-label': 'Intensité de l\'isolation',
+    oninput: e => setTune({ isoLevel: +e.target.value }) });
+  return h('div', { class: 'isoset', hidden: true },
+    h('div', { class: 'trow' }, h('span', { class: 'tl' }, 'Intensité'), h('span', { class: 'tval' })),
+    lvl, h('div', { class: 'tends' }, h('span', {}, 'Légère'), h('span', {}, 'Forte')),
+    h('div', { class: 'isobar', hidden: true }, h('i')),
+    h('div', { class: 'isonow', 'aria-live': 'polite' }),
+    h('div', { class: 'isowarn', hidden: true }, 'Pour chanter, mieux vaut couper l\'isolateur : il est fait pour la parole et peut atténuer les notes tenues.'));
+}
+function levelLabel(v) { return v >= 80 ? 'forte' : v >= 45 ? 'moyenne' : v >= 15 ? 'douce' : 'légère'; }
+const mo = b => (b / 1e6).toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+function paintIso() {
+  const on = !!S.fx.iso, ch = S.audio?.chain, st = ch?.status?.iso, info = ch?.meters?.()?.iso;
+  $$('.isoset').forEach(box => {
+    box.hidden = !on;
+    if (!on) return;
+    const sp = box.querySelector('.ilevel'); if (document.activeElement !== sp && +sp.value !== S.fx.isoLevel) sp.value = String(S.fx.isoLevel);
+    sp.style.setProperty('--v', S.fx.isoLevel + '%');
+    box.querySelector('.tval').textContent = `${S.fx.isoLevel} · ${levelLabel(S.fx.isoLevel)}`;
+    const bar = box.querySelector('.isobar'), now = box.querySelector('.isonow');
+    let t, cls = '', prog = -1;
+    if (st === 'indisponible' || (!isolatorSupported() && on)) { t = `Isolateur indisponible : ${ch?.isoError || 'navigateur non compatible'}. Le son passe sans isolation.`; cls = 'iso-na'; }
+    else if (!ch) t = 'Le modèle (≈ 11 Mo, une seule fois) se télécharge quand tu rejoins l\'appel.';
+    else if (st === 'chargement') {
+      if (isoLoad.state === 'download' && isoLoad.total) { prog = Math.min(1, isoLoad.loaded / isoLoad.total); t = `Téléchargement du modèle… ${Math.round(prog * 100)} % (une seule fois)`; }
+      else if (isoLoad.state === 'compile') { prog = 1; t = 'Préparation du modèle…'; }
+      else t = 'Démarrage du modèle…';
+      cls = 'iso-loading';
+    } else if (st === 'on') {
+      const g = info?.gateDb || 0;
+      t = `Actif · ${ch.isoLatencyMs.toFixed(0)} ms de latence${g >= 1 ? ` · voix de second plan −${g.toFixed(0)} dB` : ''}${S.fx.ns ? ' · réduction de bruit incluse' : ''}`;
+      cls = 'iso-live';
+    }
+    bar.hidden = prog < 0; if (prog >= 0) bar.firstChild.style.width = (prog * 100).toFixed(1) + '%';
+    if (now.textContent !== t) now.textContent = t;
+    now.className = 'isonow ' + cls;
+    box.querySelector('.isowarn').hidden = !S.fx.tune;
+  });
+}
 function fxStatus() {
   const st = S.audio?.chain?.status, parts = [];
   if (!S.audio?.chain) parts.push(S.engine ? 'Micro absent : réglages enregistrés.' : 'Appliqué dès que tu rejoins, puis modifiable pendant l\'appel sans coupure.');
   if (st?.ns === 'chargement') parts.push('Chargement de la réduction de bruit…');
+  if (st?.ns === 'inclus') parts.push('Réduction de bruit : incluse dans l\'isolateur de voix (RNNoise en pause).');
   if (st?.ns === 'indisponible' || (!noiseSuppressionSupported() && S.fx.ns)) parts.push('Réduction de bruit indisponible sur ce navigateur.');
   else if (S.fx.ns && S.audio?.chain?.nsInfo) parts.push(S.audio.chain.nsInfo);
   const m = S.audio?.chain?.meters?.();
@@ -324,7 +369,7 @@ function paintFx() {
     b.classList.toggle('on', on); b.classList.toggle('na', na); b.setAttribute('aria-checked', String(on));
   });
   const t = fxStatus(); $$('.fxnow').forEach(e => { if (e.textContent !== t) e.textContent = t; });
-  paintTune();
+  paintTune(); paintIso();
 }
 let fxTimer = 0;
 function micFxField({ label = true } = {}) {
@@ -333,14 +378,14 @@ function micFxField({ label = true } = {}) {
   setTimeout(paintFx, 0);
   // valeurs en direct (réduction de gain) tant que les interrupteurs sont affichés
   clearInterval(fxTimer); fxTimer = setInterval(() => { if (!$('.fxnow')) { clearInterval(fxTimer); fxTimer = 0; return; } paintFx(); }, 200);
-  // réglages de l'autotune juste sous son interrupteur (masqués tant qu'il est coupé)
-  const list = []; for (const b of btns) { list.push(b); if (b.dataset.fx === 'tune') list.push(tuneField()); }
+  // réglages de l'autotune et de l'isolateur juste sous leur interrupteur (masqués tant qu'ils sont coupés)
+  const list = []; for (const b of btns) { list.push(b); if (b.dataset.fx === 'tune') list.push(tuneField()); if (b.dataset.fx === 'iso') list.push(isoField()); }
   return h('div', { class: 'field', id: 'micFxField' }, label ? h('label', {}, 'Traitement du micro') : null,
     h('div', { class: 'toggles fx', role: 'group', 'aria-label': 'Traitement du micro' }, list), h('div', { class: 'fxnow', 'aria-live': 'polite' }));
 }
 function openMicFx() {
   modal('Traitement du micro', micFxField({ label: false }),
-    h('div', { class: 'hint' }, icon('mic'), 'Ordre : micro → réduction de bruit → autotune → compresseur → dé-esseur → envoi. Tout est calculé sur ton appareil, avant le chiffrement : rien ne part vers un service extérieur. La réduction de bruit légère du navigateur reste toujours active ; l\'interrupteur ajoute RNNoise, nettement plus efficace.'));
+    h('div', { class: 'hint' }, icon('mic'), 'Ordre : micro → isolateur de voix (ou réduction de bruit) → autotune → compresseur → dé-esseur → envoi. Tout est calculé sur ton appareil, avant le chiffrement : rien ne part vers un service extérieur. La réduction de bruit légère du navigateur reste toujours active ; l\'interrupteur ajoute RNNoise, nettement plus efficace. L\'isolateur va plus loin (musique, télé, voix lointaines) et inclut la réduction de bruit.'));
 }
 
 // ---------------- Démarrage ----------------
@@ -618,7 +663,7 @@ function techInfo(srv) {
     ['Codec audio', `${S.audio?.codec || '?'}${S.audio?.codec === 'opus' && st.opusMode ? ' (débit ' + st.opusMode + ')' : ''} · ${st.audioRate || '?'} Hz`],
     ['Micro', S.mic ? `ouvert · niveau ${Math.round(S.audio?.level || 0)}` : 'coupé'],
     ['Traitement du micro', (() => { const f = st.micfx; if (!f) return 'non démarré'; const w = v => v === 'on' ? 'oui' : v === 'off' ? 'non' : v;
-      return `réduction de bruit ${w(f.ns)}${f.simd === true ? ' (SIMD)' : f.simd === false ? ' (sans SIMD)' : ''} · autotune ${w(f.tune)}${f.tune === 'on' && f.tuneMs ? ` (${f.tuneMs.toFixed(1)} ms)` : ''} · compresseur ${w(f.comp)} · dé-esseur ${w(f.deess)} · ${f.rate / 1000} kHz`; })()],
+      return `réduction de bruit ${w(f.ns)}${f.simd === true ? ' (SIMD)' : f.simd === false ? ' (sans SIMD)' : ''} · isolateur de voix ${w(f.iso)}${f.iso === 'on' && f.isoMs ? ` (${f.isoMs.toFixed(1)} ms)` : ''}${f.iso === 'indisponible' && f.isoError ? ` (${f.isoError})` : ''}${st.nativeIso ? ' (isolation du système demandée)' : ''} · autotune ${w(f.tune)}${f.tune === 'on' && f.tuneMs ? ` (${f.tuneMs.toFixed(1)} ms)` : ''} · compresseur ${w(f.comp)} · dé-esseur ${w(f.deess)} · ${f.rate / 1000} kHz`; })()],
     ['Paquets audio envoyés', String(st.sent.audio)],
     ['Paquets audio reçus', sum(st.recv.audio) ? Object.entries(st.recv.audio).map(([k, v]) => `${name(k)} : ${v}`).join(' · ') : '0'],
     ['Paquets audio décodés', String(sum(st.decoded.audio))],

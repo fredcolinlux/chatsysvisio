@@ -415,13 +415,22 @@ export class AudioIO {
     if (!this.analyser) return 0;
     this.analyser.getFloatTimeDomainData(this._abuf); let e = 0; for (const x of this._abuf) e = Math.max(e, Math.abs(x)); return e;
   }
-  // Interrupteurs du micro ({ ns, tune, comp, deess } + réglages de l'autotune) : appliqués à chaud ; renvoie l'état effectif.
+  // Interrupteurs du micro ({ ns, iso, tune, comp, deess } + réglages de l'autotune et de l'isolateur) : appliqués à chaud ; renvoie l'état effectif.
   async setFx(fx) {
     this.fx = { ...fx };
     if (!this.chain) return null;
     const st = await this.chain.set(this.fx);
-    stats.micfx = { ...st, rate: this.ctx.sampleRate, simd: this.chain.ns?.simd ?? null, tuneMs: this.chain.tuneLatencyMs };
+    stats.micfx = { ...st, rate: this.ctx.sampleRate, simd: this.chain.ns?.simd ?? null, tuneMs: this.chain.tuneLatencyMs, isoMs: this.chain.isoLatencyMs, isoError: this.chain.isoError };
     return st;
+  }
+  // Repli de l'isolateur de voix : contrainte voiceIsolation du navigateur, seulement si le micro la propose
+  // (aujourd'hui surtout certains Chromebook) ; ailleurs, rien n'est demandé. L'effet dépend du système.
+  nativeIso(on) {
+    const t = this.micStream?.getAudioTracks?.()[0];
+    let caps = null; try { caps = t?.getCapabilities?.().voiceIsolation; } catch {}
+    const ok = Array.isArray(caps) && caps.includes(true);
+    stats.nativeIso = ok ? !!on : null;
+    if (ok && t.getSettings?.().voiceIsolation !== !!on) t.applyConstraints({ ...t.getConstraints(), voiceIsolation: !!on }).catch(() => { stats.nativeIso = null; });
   }
   get running() { return this.ctx?.state === 'running'; }
   setSink(id) { if (this.ctx?.setSinkId) return this.ctx.setSinkId(id || '').catch(() => {}); }
@@ -454,7 +463,9 @@ export class AudioIO {
     this.src = this.ctx.createMediaStreamSource(stream);
     this.cap = new AudioWorkletNode(this.ctx, 'cc-capture', { numberOfOutputs: 1, outputChannelCount: [1] });
     // Traitements du micro (réduction de bruit, compresseur, dé-esseur) : la chaîne est gardée d'un micro à l'autre.
-    if (!this.chain) { this.chain = new MicChain(this.ctx); this.setFx(this.fx); }
+    this.micStream = stream;
+    if (!this.chain) { this.chain = new MicChain(this.ctx); this.chain.onNativeIso = on => this.nativeIso(on); this.setFx(this.fx); }
+    else if (this.chain.isoError && this.fx?.iso) this.nativeIso(true);
     this.src.connect(this.chain.input); this.chain.output.connect(this.cap);
     // Sortie muette pour garder le nœud actif sur tous les navigateurs.
     const g = this.ctx.createGain(); g.gain.value = 0; this.cap.connect(g).connect(this.ctx.destination);

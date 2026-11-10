@@ -748,13 +748,15 @@ body.idle.incall .stage{cursor:none}
 @media (prefers-reduced-motion:reduce){.wbtag,.wbstatus{animation:none}.wbtag{transition:none}}
 
 /* ---- Autotune (1.8) : réglages sous l'interrupteur ---- */
+.isoset{min-width:0;display:flex;flex-direction:column;gap:6px;margin:-2px 0 4px;padding:12px 12px 10px;border-radius:var(--r-sm);background:var(--panel2);box-shadow:inset 0 0 0 1px var(--line);animation:tuneIn var(--d-base) var(--ease-out) both}
+.isoset[hidden]{display:none}
 .tuneset{min-width:0;display:flex;flex-direction:column;gap:6px;margin:-2px 0 4px;padding:12px 12px 10px;border-radius:var(--r-sm);background:var(--panel2);box-shadow:inset 0 0 0 1px var(--line);animation:tuneIn var(--d-base) var(--ease-out) both}
 .tuneset[hidden]{display:none}
 @keyframes tuneIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
-.tuneset .trow{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:12.5px}
-.tuneset .tl{color:var(--fg2);font-weight:500}
-.tuneset .tval{color:var(--acc);font-weight:500;font-feature-settings:"tnum"}
-.tuneset .tends{display:flex;justify-content:space-between;font-size:11px;color:var(--faint);margin:-2px 0 4px}
+.isoset .trow,.tuneset .trow{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:12.5px}
+.isoset .tl,.tuneset .tl{color:var(--fg2);font-weight:500}
+.isoset .tval,.tuneset .tval{color:var(--acc);font-weight:500;font-feature-settings:"tnum"}
+.isoset .tends,.tuneset .tends{display:flex;justify-content:space-between;font-size:11px;color:var(--faint);margin:-2px 0 4px}
 .tspeed{-webkit-appearance:none;appearance:none;width:100%;height:22px;background:transparent;margin:0;--v:50%;cursor:pointer;touch-action:pan-y}
 .tspeed::-webkit-slider-runnable-track{height:4px;border-radius:99px;background:linear-gradient(90deg,var(--acc-solid) var(--v),var(--line3) var(--v))}
 .tspeed::-moz-range-track{height:4px;border-radius:99px;background:var(--line3)}
@@ -773,5 +775,13 @@ body.idle.incall .stage{cursor:none}
 .tuneset .tmode button{padding:0 12px}
 .tunenow{margin-top:4px;min-height:20px;font-size:12.5px;color:var(--muted);font-feature-settings:"tnum";transition:color var(--d-fast) var(--ease-out)}
 .tunenow.tn-live{color:var(--acc)}
+.isobar{height:4px;border-radius:99px;background:var(--line3);overflow:hidden;margin-top:2px}
+.isobar[hidden]{display:none}
+.isobar i{display:block;height:100%;width:0;background:var(--acc-solid);border-radius:inherit;transition:width var(--d-fast) linear}
+.isonow{margin-top:2px;min-height:20px;font-size:12.5px;color:var(--muted);font-feature-settings:"tnum"}
+.isonow.iso-live{color:var(--acc)}
+.isonow.iso-na{color:var(--bad,#d64545)}
+.isowarn{margin-top:4px;font-size:12.5px;line-height:1.35;color:var(--warn,#b7791f)}
+.isowarn[hidden]{display:none}
 @media (max-width:760px){.tuneset .tkeys{grid-template-columns:minmax(0,1fr)}.tuneset .tmode{grid-template-columns:1fr 1fr}.tspeed{height:30px}}
-@media (prefers-reduced-motion:reduce){.tuneset{animation:none}}
+@media (prefers-reduced-motion:reduce){.tuneset,.isoset{animation:none}.isobar i{transition:none}}

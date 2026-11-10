@@ -5,11 +5,11 @@
 # + une copie sans numéro (chatsysvisio-complet.tar.gz, chatsysvisio-mise-a-jour.tar.gz) pour les commandes de la doc.
 # Le numéro de build (fichier BUILD, à commiter) est incrémenté à chaque empaquetage et inscrit dans l'archive.
 # BUILD_KEEP=1 : ne pas incrémenter (reconstruire le même build).
-# Les deux contiennent le code, public/vendor (MediaPipe, QR) et node_modules/ws : aucune dépendance téléchargée à l'installation.
+# Les deux contiennent le code, public/vendor (MediaPipe, QR, RNNoise, DeepFilterNet3) et node_modules/ws : aucune dépendance téléchargée à l'installation.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; OUT=$(cd "${1:-$ROOT/..}" && pwd)
 cd "$ROOT"
-[ -f public/vendor/mediapipe/vision_bundle.mjs ] && [ -f public/vendor/rnnoise/rnnoise-worklet.js ] || node scripts/vendor.mjs
+[ -f public/vendor/mediapipe/vision_bundle.mjs ] && [ -f public/vendor/rnnoise/rnnoise-worklet.js ] && [ -f public/vendor/deepfilter/df_bg.wasm.br ] || node scripts/vendor.mjs
 [ -f node_modules/ws/package.json ] || npm ci --omit=dev
 V=$(cat VERSION)
 B=$(cat BUILD 2>/dev/null || echo 0); [[ "$B" =~ ^[0-9]+$ ]] || { echo "BUILD invalide : $B" >&2; exit 1; }

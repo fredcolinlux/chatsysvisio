@@ -92,3 +92,32 @@ export async function measureTune(page, fx, { f = 450, sec = 1.5, kind = 'sine',
     return { hz: (z - 1) * sr / (last - first), latencyMs: L / sr * 1000, maxDiff, st: { ...st }, chainMs: chain.tuneLatencyMs };
   }, { fx, f, sec, kind, sr });
 }
+
+// Isolateur de voix (1.9) : voix de synthèse + musique (ou voix lointaine) rendues à travers MicChain dans la page
+// d'appel (rendu hors ligne, CSP de la page). Renvoie la sortie et les mesures : latence (corrélation avec ta voix),
+// niveau de la musique pendant tes pauses, gain de ta voix seule, état, temps de chargement.
+export async function measureIso(page, fx, { sr = 48000, sec = 5, other = 'musique', relDb = -6 } = {}) {
+  const { parole, musique, lointain } = await import('../../scripts/voix-synthese.mjs');
+  const v = parole(sr, sec, { seed: 7 }), o = other === 'musique' ? musique(sr, sec) : other === 'lointaine' ? lointain(sr, parole(sr, sec, { f0: 190, seed: 42 }), { gainDb: 0, rt60: 0.3 }) : new Float32Array(v.length);
+  const dbE = a => { let e = 0; for (const q of a) e += q * q; return 10 * Math.log10(e / a.length + 1e-20); };
+  const k = other === 'aucun' ? 0 : 10 ** ((relDb - (dbE(o) - dbE(v))) / 20), mix = v.map((q, i) => q + k * o[i]);
+  const r = await page.evaluate(async ({ fx, x, v, sr }) => {
+    const { MicChain } = await import('/js/micfx.js');
+    const n = x.length, run = async (sig, f) => {
+      const ctx = new OfflineAudioContext(1, n, sr), chain = new MicChain(ctx), t0 = performance.now();
+      const st = await chain.set(f); const loadMs = performance.now() - t0;
+      const b = ctx.createBuffer(1, n, sr); b.getChannelData(0).set(sig);
+      const s = ctx.createBufferSource(); s.buffer = b; s.connect(chain.input); chain.output.connect(ctx.destination); s.start();
+      const t1 = performance.now(); const y = Float32Array.from((await ctx.startRendering()).getChannelData(0));
+      return { y, st: { ...st }, loadMs, renderMs: performance.now() - t1, isoMs: chain.isoLatencyMs, err: chain.isoError, startMs: chain.isoStartMs };
+    };
+    const a = await run(Float32Array.from(x), fx), solo = await run(Float32Array.from(v), fx);
+    return { y: Array.from(a.y), ySolo: Array.from(solo.y), st: a.st, loadMs: a.loadMs, renderMs: a.renderMs, isoMs: a.isoMs, err: a.err, startMs: a.startMs };
+  }, { fx, x: Array.from(mix), v: Array.from(v), sr });
+  const y = Float32Array.from(r.y), ys = Float32Array.from(r.ySolo);
+  let best = -1, L = 0; for (let d = 0; d < Math.round(sr * 0.06); d++) { let c = 0; for (let i = 0; i + d < v.length; i += 3) c += v[i] * ys[i + d]; if (c > best) { best = c; L = d; } }
+  const mask = new Uint8Array(v.length); let s = 0; for (let i = 0; i < v.length; i++) { s = Math.max(Math.abs(v[i]), s * 0.9995); mask[i] = s < 1e-3; }
+  let pi = 0, po = 0; for (let i = 0; i + L < v.length; i++) if (mask[i]) { pi += mix[i] ** 2; po += y[i + L] ** 2; }
+  let vi = 0, vo = 0; for (let i = 0; i + L < v.length; i++) { vi += v[i] ** 2; vo += ys[i + L] ** 2; }
+  return { ...r, y: undefined, ySolo: undefined, latencyMs: L / sr * 1000, pausesDb: 10 * Math.log10(po / pi), voiceDb: 10 * Math.log10(vo / vi) };
+}

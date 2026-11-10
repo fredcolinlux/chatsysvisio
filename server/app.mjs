@@ -3,6 +3,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { WebSocketServer } from 'ws';
 import { Store } from './store.mjs';
 import { Hub } from './hub.mjs';
@@ -139,7 +140,7 @@ export function createApp(cfg) {
     const base = cfg.publicDir;
     const file = path.normalize(path.join(base, rel));
     if (!file.startsWith(base + path.sep)) return notFound(req, res);
-    let st; try { st = fs.statSync(file); } catch { return notFound(req, res); }
+    let st; try { st = fs.statSync(file); } catch { return rel.startsWith('vendor/') ? servePrecompressed(req, res, file, rel, { wasm }) : notFound(req, res); }
     if (!st.isFile()) return notFound(req, res);
     const ext = path.extname(file).toLowerCase(), type = MIME[ext];
     if (!type) return notFound(req, res);
@@ -157,6 +158,29 @@ export function createApp(cfg) {
     if (req.method === 'HEAD') return res.end();
     if (body) return res.end(body);
     fs.createReadStream(file).pipe(res);
+  }
+  // Gros fichiers de vendor/ livrés seulement précompressés (modèle DeepFilterNet3 : 34 Mo → 10,7 Mo en brotli) :
+  // fichier.br ou fichier.gz selon Accept-Encoding ; décompression à la volée pour un client qui n'accepte ni l'un ni
+  // l'autre. Le type est celui du fichier d'origine (.wasm → application/wasm).
+  function servePrecompressed(req, res, file, rel, { wasm }) {
+    const ext = path.extname(file).toLowerCase(), type = MIME[ext];
+    if (!type) return notFound(req, res);
+    const ae = String(req.headers['accept-encoding'] || '');
+    const ok = e => new RegExp(`(^|[\\s,])${e}(\\s*;\\s*q=(?!0(\\.0*)?\\s*($|,))[\\d.]+)?\\s*($|,)`).test(ae);
+    const cand = [ok('br') && ['br', file + '.br'], ['gzip', file + '.gz']].filter(Boolean);
+    let enc, src, st;
+    for (const [e, f] of cand) { try { st = fs.statSync(f); if (st.isFile()) { enc = e; src = f; break; } } catch {} }
+    if (!src) return notFound(req, res);
+    const inflate = enc === 'gzip' && !ok('gzip');
+    securityHeaders(req, res, cfg, { wasm });
+    const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}-${inflate ? 'id' : enc}"`;
+    const headers = { 'Content-Type': type, 'ETag': etag, 'Cache-Control': 'public, max-age=604800', 'Vary': 'Accept-Encoding' };
+    if (!inflate) { headers['Content-Encoding'] = enc; headers['Content-Length'] = st.size; }
+    if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); return res.end(); }
+    res.writeHead(200, headers);
+    if (req.method === 'HEAD') return res.end();
+    const rs = fs.createReadStream(src);
+    if (inflate) rs.pipe(zlib.createGunzip()).on('error', () => res.destroy()).pipe(res); else rs.pipe(res);
   }
   // Ajoute ?v=<build> aux scripts et feuilles de style (HTML), aux imports entre modules (js/) et au cache du
   // service worker ; la page porte data-build pour détecter un client resté sur une ancienne version.

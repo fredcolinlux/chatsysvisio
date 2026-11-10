@@ -49,13 +49,14 @@ test('dé-esseur : atténuation plafonnée (maxCut) et fréquence d\'échantillo
   for (const v of y) assert.ok(Number.isFinite(v));
 });
 
-test('réglages : quatre interrupteurs indépendants, coupés par défaut, valeurs invalides ignorées', () => {
-  assert.deepEqual(parseFx(null), { comp: false, deess: false, ns: false, tune: false, tuneSpeed: 50, tuneKey: -1, tuneMinor: false });
-  // réglages enregistrés par une 1.6 / 1.7 (trois clés) : l'autotune reste coupé
+test('réglages : cinq interrupteurs indépendants, coupés par défaut, valeurs invalides ignorées', () => {
+  assert.deepEqual(parseFx(null), { comp: false, deess: false, ns: false, tune: false, tuneSpeed: 50, tuneKey: -1, tuneMinor: false, iso: false, isoLevel: 60 });
+  // réglages enregistrés par une 1.6 / 1.7 (trois clés) ou une 1.8 : l'autotune et l'isolateur restent coupés
   assert.deepEqual(parseFx('{"comp":true,"deess":false,"ns":true}'), { ...FX_DEFAULTS, comp: true, ns: true });
   assert.deepEqual(parseFx('{"tune":true,"tuneSpeed":101,"tuneKey":12,"tuneMinor":"oui"}'), { ...FX_DEFAULTS, tune: true });
   assert.deepEqual(parseFx('{"tune":true,"tuneSpeed":85,"tuneKey":9,"tuneMinor":true}'), { ...FX_DEFAULTS, tune: true, tuneSpeed: 85, tuneKey: 9, tuneMinor: true });
   assert.deepEqual(parseFx('{"comp":true,"ns":"oui","x":1}'), { ...FX_DEFAULTS, comp: true });
+  assert.deepEqual(parseFx('{"ns":true,"tune":true,"tuneSpeed":50,"tuneKey":-1,"tuneMinor":false}'), { ...FX_DEFAULTS, ns: true, tune: true });
   assert.deepEqual(parseFx('pas du json'), FX_DEFAULTS);
   const mem = new Map(), st = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)) };
   saveFx({ ...FX_DEFAULTS, deess: true, ns: true }, st);
