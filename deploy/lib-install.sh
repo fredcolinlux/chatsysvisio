@@ -138,6 +138,9 @@ SCREEN_KBPS='900'
 # HD (1.1) : couche 720p / 1080p (envoyée seulement à qui affiche la personne en grand), partage d'écran 1080p
 VIDEO_720_KBPS='1200'
 VIDEO_1080_KBPS='2500'
+# 1.10 : débit HD des petits salons (≤ 3 personnes), dégressif jusqu'aux valeurs ci-dessus au-delà de 6 personnes
+VIDEO_720_MAX_KBPS='2000'
+VIDEO_1080_MAX_KBPS='4000'
 SCREEN_HD_KBPS='1500'
 # Hauteur vidéo maximale acceptée par le serveur : 360, 720 ou 1080
 VIDEO_MAX_HEIGHT='1080'
@@ -180,6 +183,8 @@ migrate_env() {
   env_set_default MAX_ROOMS "5000" "Nombre max de salons"
   env_set_default VIDEO_720_KBPS "1200" "HD 720p (kbit/s)"
   env_set_default VIDEO_1080_KBPS "2500" "HD 1080p (kbit/s)"
+  env_set_default VIDEO_720_MAX_KBPS "2000" "HD 720p en petit salon, ≤ 3 personnes (kbit/s)"
+  env_set_default VIDEO_1080_MAX_KBPS "4000" "HD 1080p en petit salon, ≤ 3 personnes (kbit/s)"
   env_set_default SCREEN_HD_KBPS "1500" "Partage d'écran 1080p (kbit/s)"
   env_set_default VIDEO_MAX_HEIGHT "1080" "Hauteur vidéo max : 360, 720 ou 1080"
   env_set_default MEDIA_MAX_KBPS "20000" "Débit média max reçu d'une personne (kbit/s)"

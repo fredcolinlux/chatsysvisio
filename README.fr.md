@@ -30,6 +30,9 @@ Dérivé de [Camus](https://github.com/camuschat/camus) (AGPL-3.0, voir `NOTICE.
   dé-esseur, interrupteurs indépendants appliqués à chaud pendant l'appel (salle d'attente ou menu « … »).
 - **Autotune (1.8)** : ramène le chant sur la note juste (chromatique ou gamme majeure / mineure), vitesse réglable de
   naturelle à « robot », note affichée en direct ; calculé sur l'appareil, 13 ms de latence, son intact hors voix chantée.
+- **Réglages de la caméra (1.10)** : luminosité, contraste, saturation, netteté, exposition et balance des blancs quand
+  le navigateur les expose (Chrome / Edge sur ordinateur), mode faible lumière (15 i/s, exposition plus longue, bien
+  moins de grain) et choix du débit HD ; 1080p à 4 Mbit/s en petit salon, image clé HD toutes les 10 s au lieu de 4.
 - **Isolateur de voix (1.9)** : garde ta voix et retire musique, télé, bruits et la plupart des voix derrière toi pendant
   tes pauses (modèle DeepFilterNet3 exécuté sur l'appareil, WebAssembly, ≈ 11 Mo téléchargés une seule fois depuis ton
   serveur, seulement s'il est activé) ; intensité réglable, ≈ 39 ms de latence, réduction de bruit incluse. Il ne sait pas
@@ -43,8 +46,8 @@ Dérivé de [Camus](https://github.com/camuschat/camus) (AGPL-3.0, voir `NOTICE.
 **Installation rapide (paquet autonome hors ligne, Debian 13)** :
 
 ```bash
-sha256sum -c chatsysvisio-1.9.0.tar.gz.sha256
-tar -xzf chatsysvisio-1.9.0.tar.gz && cd chatsysvisio-1.9.0 && bash install.sh
+sha256sum -c chatsysvisio-1.10.0.tar.gz.sha256
+tar -xzf chatsysvisio-1.10.0.tar.gz && cd chatsysvisio-1.10.0 && bash install.sh
 ```
 
 Manuel complet : **`docs/MANUEL.md`** · migration depuis l'ancien nom : **`docs/MIGRATION.md`** · détails : **`README-INSTALL.md`**. Choix techniques et limites : **`docs/ARCHITECTURE.md`**.

@@ -1,6 +1,6 @@
 # ChatSysVisio — Manuel d'installation et d'utilisation
 
-*Version 1.9.0 · licence AGPL-3.0-or-later · fork de Camus*
+*Version 1.10.0 · licence AGPL-3.0-or-later · fork de Camus*
 
 ![Accueil](img/accueil-bureau.png)
 
@@ -346,6 +346,33 @@ Limites :
 - sans AudioWorklet (navigateur très ancien), l'interrupteur affiche « indisponible » et le son passe sans
   correction. Les navigateurs actuels le gèrent tous.
 
+### Réglages de la caméra et qualité d'image (1.10)
+
+Bouton **Réglages de la caméra** dans la salle d'attente (« Image de la caméra ») et dans le menu « … » pendant l'appel.
+Tout s'applique à chaud, sans couper la caméra, et reste enregistré dans ce navigateur, **par caméra**.
+
+![Réglages de la caméra](img/camera-reglages.png)
+
+- **Luminosité, contraste, saturation, netteté, exposition (auto / manuelle), balance des blancs (auto / température)** :
+  seulement les réglages que la caméra et le navigateur exposent. Chrome et Edge sur ordinateur les donnent pour la
+  plupart des webcams (Logitech C920, C922, Brio…) ; Firefox et Safari n'en exposent aucun (le panneau le dit). Une
+  valeur jamais touchée reste celle du pilote ; **Réinitialiser** remet les valeurs relevées à la première ouverture.
+- **Faible lumière** : la caméra passe à 15 images/s. L'exposition automatique peut alors poser jusqu'à 66 ms par image
+  au lieu de 33–41 ms : moins de gain, donc **beaucoup moins de grain** dans une pièce sombre (c'est ce que fait
+  RightLight dans le logiciel Logitech). La couche HD suit la caméra à 15 i/s.
+- **Débit HD** : *Auto* envoie la 1080p à 4 Mbit/s à 2 ou 3 personnes (720p : 2 Mbit/s), 3,25 Mbit/s jusqu'à 6, puis
+  2,5 Mbit/s (débit d'avant la 1.10) ; *Standard* garde toujours 2,5 Mbit/s ; *Élevé* garde toujours 4 Mbit/s. Plafonds
+  réglables côté serveur (`VIDEO_1080_MAX_KBPS`, `VIDEO_720_MAX_KBPS`).
+
+**Pourquoi l'image est plus bruitée que dans Logi Tune / G HUB** : l'aperçu du logiciel Logitech montre l'image brute
+de la caméra, avec ses traitements propres (RightLight, HDR, réduction de bruit), qui **ne s'appliquent pas au
+navigateur** ; ChatSysVisio, lui, compresse l'image (VP8) pour l'envoyer : le grain du capteur coûte très cher en débit
+et devient une bouillie à 2,5 Mbit/s. Le plus efficace, dans l'ordre : de la lumière **de face** sur le visage, le mode
+**Faible lumière**, une **netteté** un peu plus basse (l'accentuation de la caméra grossit le grain), le débit *Élevé*.
+Fermer le logiciel Logitech pendant l'appel : il peut garder la caméra ou lui imposer un autre mode.
+
+![Réglages de la caméra sur mobile](img/camera-reglages-mobile.png)
+
 ### « Vu » dans le chat (1.7)
 
 Sous **vos propres messages** apparaît une petite mention bleue : **« Vu par Bruno »** si une personne l'a lu,
@@ -464,14 +491,14 @@ Un code de secours remplace une fois le code TOTP à la connexion.
 tar -xzf chatsysvisio-<version>.tar.gz && cd chatsysvisio-<version> && bash update.sh
 ```
 
-Ou avec l'archive de **mise à jour** (même code, sans les tests), par exemple pour passer de 1.6.0, 1.7.0 ou 1.8.0 à 1.9.0 :
+Ou avec l'archive de **mise à jour** (même code, sans les tests), par exemple pour passer de 1.6.0, 1.7.0, 1.8.0 ou 1.9.0 à 1.10.0 :
 
 ```bash
-sha256sum -c chatsysvisio-mise-a-jour-1.9.0-b5.tar.gz.sha256
-tar -xzf chatsysvisio-mise-a-jour-1.9.0-b5.tar.gz && cd chatsysvisio-maj && bash update.sh
+sha256sum -c chatsysvisio-mise-a-jour-1.10.0-b6.tar.gz.sha256
+tar -xzf chatsysvisio-mise-a-jour-1.10.0-b6.tar.gz && cd chatsysvisio-maj && bash update.sh
 ```
 
-L'archive 1.9.0 contient déjà le modèle de l'isolateur, précompressé : le serveur n'a rien à télécharger de plus.
+Depuis la 1.9.0, l'archive contient déjà le modèle de l'isolateur, précompressé : le serveur n'a rien à télécharger de plus.
 
 `update.sh` sauvegarde d'abord (`/var/backups/chatsysvisio/chatsysvisio-maj-DATE.tar.gz`), garde l'ancien code dans
 `/opt/chatsysvisio.prev` et revient automatiquement en arrière si la nouvelle version ne démarre pas. Ensuite, chaque
@@ -517,6 +544,7 @@ Code source : conformément à l'AGPL, `/source.tar.gz` sert le code exact de la
 | **ERR_EMPTY_RESPONSE** | la connexion arrive d'une IP non listée dans `ALLOW_FROM` (le serveur la coupe sans réponse) — ajouter l'IP de NPM ou vider `ALLOW_FROM` ; ou on a tapé `https://IP:8790` alors que le port local parle HTTP. |
 | **« Jeton CSRF invalide »** | page ouverte depuis longtemps, cookies bloqués ou adresse différente de `PUBLIC_URL` (Origin refusée) : recharger la page, utiliser exactement `PUBLIC_URL`, autoriser les cookies du site. |
 | Vidéo noire / « Websockets » | activer **Websockets Support** dans NPM ; ajouter les `proxy_read_timeout`. |
+| **Image bruitée ou pâteuse** comparée au logiciel de la webcam | menu « … » → **Réglages de la caméra** : mode *Faible lumière*, netteté un peu plus basse, débit HD *Élevé* ; éclairer le visage de face ; fermer Logi Tune / G HUB (leurs réglages RightLight / HDR ne s'appliquent pas au navigateur). La HD n'est envoyée qu'à qui t'affiche en grand ; « Qualité vidéo » indique si l'envoi est réduit (réseau ou encodeur). |
 | Caméra refusée | HTTPS obligatoire ; autoriser la caméra dans le cadenas de la barre d'adresse. |
 | « Lien incomplet » | le lien a été coupé : recopier le lien complet avec `#k=…`. |
 | **Couleurs un peu différentes sous Firefox** | Firefox ignore l'espace colorimétrique des images VP8 à l'affichage : teintes légèrement décalées (jaune plus vert, contrastes accentués). Chrome, Edge et Safari sont fidèles. Contournement : utiliser Chrome / Edge, ou un autre navigateur côté émetteur. |

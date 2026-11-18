@@ -135,7 +135,7 @@ export class Hub {
         Object.assign(p.state, this.cleanState(m.state));
         this.send(p, { t: 'welcome', you: this.peerInfo(p), room: { name: rs.room.name, slug: rs.room.slug, isPublic: rs.room.isPublic, hasPassword: !!rs.room.passwordHash, limit: this.limitOf(rs.room), e2ee: rs.room.e2ee ? rs.room.e2ee.mode : null },
           peers: rs.others(p).filter(o => o.hello).map(o => this.peerInfo(o)), history: this.store.messages(rs.room).slice(-150).map(x => x.ark && x.ark === p.rk ? { ...publicMsg(x), own: true } : publicMsg(x)),
-          bitrates: { hi: this.cfg.videoHiKbps, lo: this.cfg.videoLoKbps, screen: this.cfg.screenKbps, hd720: this.cfg.video720Kbps, hd1080: this.cfg.video1080Kbps, screenHd: this.cfg.screenHdKbps },
+          bitrates: { hi: this.cfg.videoHiKbps, lo: this.cfg.videoLoKbps, screen: this.cfg.screenKbps, hd720: this.cfg.video720Kbps, hd1080: this.cfg.video1080Kbps, hd720max: Math.max(this.cfg.video720Kbps, this.cfg.video720MaxKbps ?? 0), hd1080max: Math.max(this.cfg.video1080Kbps, this.cfg.video1080MaxKbps ?? 0), screenHd: this.cfg.screenHdKbps },
           maxHeight: this.cfg.videoMaxHeight, ai: this.cfg.aiEnabled && !rs.room.e2ee, speaker: rs.speaker,
           server: { version: this.cfg.version, build: this.cfg.build, proto: PROTO } });
         this.sendOwnSeen(p);

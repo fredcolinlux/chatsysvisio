@@ -1,7 +1,7 @@
 // Moteur média de ChatSysVisio : capture, encodage (WebCodecs ou repli), transport WebSocket, décodage, lecture.
 // Tout passe par UNE connexion WSS (port 443) : aucun UDP, aucun port supplémentaire, aucun TURN.
 import { pack, unpack, T_VIDEO, T_AUDIO, L_LO, L_HI, L_SCREEN, L_HD, F_KEY, csFlags, flagsCs, CODECS, CODEC_NAMES, PROTO } from './protocol.js';
-import { ceilingFor, clampToSource, hdParams, screenParams, SendAdapter, normalizeQuality } from './quality.js';
+import { ceilingFor, clampToSource, hdParams, screenParams, SendAdapter, normalizeQuality, normalizeRate } from './quality.js';
 import { AdpcmEncoder, adpcmDecode, ADPCM_RATE, Resampler, rmsLevel } from './adpcm.js';
 import { roundLevel } from './e2ee.js';
 import { opusConfigs } from './audio-config.js';
@@ -15,8 +15,17 @@ const AVC = 'avc1.42E01F';      // Baseline 3.1 : jusqu'à 1280×720
 const AVC_HD = 'avc1.42E028';   // Baseline 4.0 : 1920×1080
 const VCFG = { vp8: { codec: 'vp8' }, avc: { codec: AVC, avc: { format: 'annexb' } } };
 const encCfg = (name, w, h) => name === 'avc' && w * h > 1280 * 720 ? { ...VCFG.avc, codec: AVC_HD } : VCFG[name];
+// Indice de contenu (1.10) : « detail » pour le partage d'écran (texte net, mode écran de l'encodeur) ; rien pour la
+// caméra (mode caméra par défaut, « detail » y serait contre-productif). Membre ignoré par les navigateurs qui ne le
+// connaissent pas.
+const hintFor = layer => layer === L_SCREEN ? { contentHint: 'detail' } : {};
 const isApple = () => /Apple/.test(navigator.vendor || '');
 const KEY_INTERVAL = 4000;
+// Couche HD (1.10) : image clé toutes les 10 s au lieu de 4. Une image clé 1080p (100–400 Ko) mange 1 à 3 s du budget
+// d'un flux à 2,5–4 Mbit/s : toutes les 4 s, l'image « respirait » (nette puis floue). Sur WebSocket (TCP) rien ne se
+// perd en route ; les nouveaux venus, changements de couche, abandons côté relais et erreurs de décodage demandent
+// déjà une image clé immédiate (keyreq).
+const KEY_INTERVAL_HD = 10000;
 
 // ---------- Capacités du navigateur ----------
 export async function detectCaps() {
@@ -109,7 +118,7 @@ class VideoLayer {
       error: e => { err('encodeur ' + this.codec, e); this.bad++; this.reset(); },
     });
     try {
-      this.enc.configure({ ...encCfg(this.codec, w, h), width: w, height: h, bitrate: kbps * 1000, framerate: fps, latencyMode: 'realtime' });
+      this.enc.configure({ ...encCfg(this.codec, w, h), ...hintFor(this.layer), width: w, height: h, bitrate: kbps * 1000, framerate: fps, latencyMode: 'realtime' });
     } catch (e) { err('configure', e); this.bad++; this.enc = null; }
   }
   encode(src, sw, sh, { maxW, maxH, kbps, fps, quality }, now) {
@@ -134,7 +143,7 @@ class VideoLayer {
       }, 'image/jpeg', quality);
       return;
     }
-    const key = this.forceKey || now - this.lastKey > KEY_INTERVAL;
+    const key = this.forceKey || now - this.lastKey > (this.layer === L_HD ? KEY_INTERVAL_HD : KEY_INTERVAL);
     if (key) { this.forceKey = false; this.lastKey = now; }
     let frame;
     try {
@@ -152,7 +161,7 @@ export class Engine {
   constructor(opts) {
     // opts : { slug, name, caps, ui, getCamSource(), quality }
     Object.assign(this, opts);
-    this.need = new Set(); this.codecs = { video: 'jpeg', audio: 'adpcm' }; this.bitrates = { hi: 450, lo: 70, screen: 900, hd720: 1200, hd1080: 2500, screenHd: 1500 };
+    this.need = new Set(); this.codecs = { video: 'jpeg', audio: 'adpcm' }; this.bitrates = { hi: 450, lo: 70, screen: 900, hd720: 1200, hd1080: 2500, hd720max: 2000, hd1080max: 4000, screenHd: 1500 };
     this.state = { mic: false, cam: false, screen: false, hand: false };
     this.layers = [L_LO, L_HI, L_SCREEN, L_HD].map(l => new VideoLayer(l, u8 => this.sendVideo(u8)));
     this.adapter = new SendAdapter(); this.maxHeight = 1080; this.vq = 0; this.sendH = 0; this.wantH = 360;
@@ -264,7 +273,12 @@ export class Engine {
     if (this.state.cam) {
       const wLo = this.need.has(L_LO) || (eco && (this.need.has(L_HI) || this.need.has(L_HD)));
       const wHi = !eco && this.need.has(L_HI), wHd = !eco && this.need.has(L_HD);
-      const jpeg = lo.codec === 'jpeg', hiFps = jpeg ? 8 : 15, hp = hdParams(this.sendH, br), hdFps = jpeg ? 8 : hp.fps;
+      // Débit HD selon le nombre de personnes et le réglage « Débit HD » ; cadence plafonnée à celle de la caméra
+      // (mode faible lumière à 15 i/s : pas d'images répétées encodées pour rien).
+      const hp = hdParams(this.sendH, br, { n: this.peersBySid.size + 1, rate: normalizeRate(this.rate) });
+      const camFps = Math.round(this.camFps?.() || 0), jpeg = lo.codec === 'jpeg', hiFps = jpeg ? 8 : 15;
+      const hdFps = jpeg ? 8 : camFps >= 10 ? Math.min(hp.fps, camFps) : hp.fps;
+      stats.hd = { kbps: hp.kbps, fps: hdFps, h: this.sendH };
       if ((wLo && this.due(lo, 8, now)) || (wHi && this.due(hi, hiFps, now)) || (wHd && this.due(hd, hdFps, now))) {
         const src = this.lastSrc = this.getCamSource(this.wantH);
         if (src) {

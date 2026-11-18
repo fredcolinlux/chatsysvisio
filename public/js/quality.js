@@ -35,10 +35,29 @@ export function clampToSource(h, sw, sh) {
   return Math.min(h, 360);
 }
 
-// Paramètres d'encodage de la couche HD (L_HD) selon la hauteur visée.
-export function hdParams(h, br = {}) {
-  if (h >= 1080) return { maxW: 1920, maxH: 1080, kbps: br.hd1080 || 2500, fps: 24, quality: 0.75 };
-  if (h >= 720) return { maxW: 1280, maxH: 720, kbps: br.hd720 || 1200, fps: 24, quality: 0.72 };
+// Débit de la couche HD (1.10) : à 2,5 Mbit/s, une image 1080p de webcam (grain du capteur compris) devient pâteuse ;
+// en petit salon on monte au plafond (4 Mbit/s par défaut), puis on redescend vers le plancher quand le salon grandit
+// (chaque personne reçoit jusqu'à 4 couches HD). Réglage « Débit HD » : auto (selon le nombre de personnes),
+// std (plancher, comportement d'avant la 1.10) ou high (plafond, quel que soit le nombre de personnes).
+//   n : personnes dans le salon (soi compris) ; base / max : plancher / plafond en kbit/s.
+export const RATE_OPTIONS = [
+  ['auto', 'Auto', 'Auto : débit élevé à 2 ou 3, réduit quand le salon grandit'],
+  ['std', 'Standard', 'Standard : débit d\'avant la 1.10, plus léger pour le réseau'],
+  ['high', 'Élevé', 'Élevé : débit maximal, image la plus nette (réseau plus sollicité)'],
+];
+export const normalizeRate = v => RATE_OPTIONS.some(o => o[0] === v) ? v : 'auto';
+export function hdKbps(base, max, { n = 0, rate = 'auto' } = {}) {
+  max = Math.max(base, max || base); rate = normalizeRate(rate);
+  if (rate === 'std' || !n && rate === 'auto') return base;
+  if (rate === 'high' || n <= 3) return max;
+  if (n <= 6) return Math.round((base + max) / 2 / 50) * 50;
+  return base;
+}
+
+// Paramètres d'encodage de la couche HD (L_HD) selon la hauteur visée (o : { n, rate } pour le débit, voir hdKbps).
+export function hdParams(h, br = {}, o = {}) {
+  if (h >= 1080) return { maxW: 1920, maxH: 1080, kbps: hdKbps(br.hd1080 || 2500, br.hd1080max, o), fps: 24, quality: 0.75 };
+  if (h >= 720) return { maxW: 1280, maxH: 720, kbps: hdKbps(br.hd720 || 1200, br.hd720max, o), fps: 24, quality: 0.72 };
   return { maxW: 640, maxH: 360, kbps: br.hi || 450, fps: 15, quality: 0.62 };
 }
 

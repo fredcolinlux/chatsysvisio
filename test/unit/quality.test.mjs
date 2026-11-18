@@ -163,6 +163,7 @@ test('état « vq » : hauteurs valides seulement, bornées par VIDEO_MAX_HEIGHT
   ctl(a, { t: 'state', state: { vq: 360 } }); assert.equal(b.ws.last('peer').state.vq, 360);
   assert.equal(a.ws.last('welcome').maxHeight, 720);
   assert.equal(a.ws.last('welcome').bitrates.hd1080, 2500);
+  assert.equal(a.ws.last('welcome').bitrates.hd1080max, 4000); assert.equal(a.ws.last('welcome').bitrates.hd720max, 2000);
   hub.close();
 });
 

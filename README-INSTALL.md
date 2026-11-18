@@ -12,7 +12,7 @@ connexion HTTPS/WebSocket que Nginx Proxy Manager (NPM) relaie vers le CT. Pas d
 ## 2. Installation
 
 **Paquet autonome (recommandé, hors ligne)** : `chatsysvisio-<version>.tar.gz` contient Node.js 24 officiel (x64 + arm64,
-SHA256 vérifié), les dépendances, MediaPipe et la police : `tar -xzf chatsysvisio-1.9.0.tar.gz && cd chatsysvisio-1.9.0 && bash install.sh`.
+SHA256 vérifié), les dépendances, MediaPipe et la police : `tar -xzf chatsysvisio-1.10.0.tar.gz && cd chatsysvisio-1.10.0 && bash install.sh`.
 Aucun paquet n'est téléchargé (`USE_SYSTEM_NODE=1` pour utiliser `nodejs` de Debian à la place). Pas à pas : `docs/MANUEL.md`.
 
 Archives classiques (Node.js des dépôts Debian) :
@@ -140,7 +140,7 @@ Il n'y a rien à migrer : Camus ne conserve ni comptes ni historique.
 ## 4. Mise à jour
 
 ```bash
-tar -xzf chatsysvisio-mise-a-jour-1.9.0-b5.tar.gz   # nom exact de l'archive (ou chatsysvisio-mise-a-jour.tar.gz)
+tar -xzf chatsysvisio-mise-a-jour-1.10.0-b6.tar.gz   # nom exact de l'archive (ou chatsysvisio-mise-a-jour.tar.gz)
 cd chatsysvisio-maj
 bash update.sh
 ```
@@ -203,6 +203,7 @@ partagés (supprimés avec le salon). Aucune vidéo ni aucun son n'est enregistr
 | `MAX_PARTICIPANTS` | plafond par salon (25 maximum) |
 | `VIDEO_LO_KBPS` / `VIDEO_HI_KBPS` / `SCREEN_KBPS` | débits des vignettes / image 360p / partage d'écran 720p |
 | `VIDEO_720_KBPS` / `VIDEO_1080_KBPS` / `SCREEN_HD_KBPS` | débits HD 720p (1200) / 1080p (2500) / partage d'écran 1080p (1500) |
+| `VIDEO_720_MAX_KBPS` / `VIDEO_1080_MAX_KBPS` | 1.10 : débits HD en petit salon, ≤ 3 personnes (2000 / 4000) ; dégressif jusqu'aux valeurs ci-dessus au-delà de 6 |
 | `VIDEO_MAX_HEIGHT` | qualité maximale acceptée par le serveur : `360`, `720` ou `1080` (défaut) — `720` si la liaison montante est < 50 Mbit/s |
 | `MEDIA_MAX_KBPS` | débit média maximal reçu d'une personne (défaut 20000 kbit/s) |
 | `AUDIO_TOP_N` | nombre de voix relayées simultanément (les plus fortes) |

@@ -33,7 +33,7 @@ navigateur ──(WSS, 443)── NPM ──(WS, 8790)── serveur Node (SFU �
 - **Vidéo** : WebCodecs **VP8** (H.264 Baseline si VP8 manque ; H.264 en premier sur Safari/iPhone, encodeur matériel),
   jusqu'à trois couches caméra émises **seulement si quelqu'un les regarde** :
   vignette 256×144 à 8 i/s (~70 kbit/s), image moyenne 640×360 à 15 i/s (~450 kbit/s) et, depuis la 1.1, couche **HD**
-  1280×720 à 24 i/s (~1,2 Mbit/s) ou **1920×1080 à 24 i/s (~2,5 Mbit/s)**. Partage d'écran : 1920×1080 à 6 i/s
+  1280×720 à 24 i/s (~1,2 Mbit/s) ou **1920×1080 à 24 i/s (~2,5 Mbit/s)** ; depuis la 1.10, 2 / 4 Mbit/s en petit salon (voir « Image caméra (1.10) »). Partage d'écran : 1920×1080 à 6 i/s
   (~1,5 Mbit/s), ou 1280×720 (~900 kbit/s) en réglage 360p/720p, en repli JPEG ou pendant une adaptation.
 - **Son** : AudioWorklet → WebCodecs **Opus** 48 kHz mono 24 kbit/s par trames de 20 ms. Détection d'activité vocale :
   rien n'est émis après 600 ms de silence.
@@ -87,16 +87,38 @@ qu'en 360p ; seule la composition (2 `drawImage` + filtre de flou) grandit. Gard
 composition redescend d'abord à 1280 px, puis le détourage passe à une image sur deux, et au-delà de 90 ms il se coupe.
 Sur mobile, flou + 1080p est exclu d'office (720p max) : chauffe et batterie.
 
+### Image caméra (1.10)
+
+- **Débit HD selon la taille du salon** (`hdKbps`, `quality.js`) : ≤ 3 personnes → plafond (`VIDEO_1080_MAX_KBPS` 4000,
+  `VIDEO_720_MAX_KBPS` 2000), ≤ 6 → moyenne plancher/plafond, au-delà → plancher (`VIDEO_1080_KBPS` 2500,
+  `VIDEO_720_KBPS` 1200). Réglage client *Débit HD* : Auto / Standard (plancher) / Élevé (plafond). L'émetteur n'envoie
+  qu'une couche HD quel que soit le nombre de spectateurs ; c'est le descendant des récepteurs (≤ 4 couches HD) qui grossit.
+- **Image clé HD toutes les 10 s** (4 s avant ; 4 s inchangées pour vignette, 360p et écran). Mesuré hors temps réel
+  (`scripts/video-bench.mjs`) : la pire image (corrélation des détails avec la mire) passait de 0,80 à 0,98 sans bruit.
+  Sur TCP rien ne se perd ; nouveaux venus, changements de couche, abandons du relais et erreurs de décodage demandent
+  déjà une image clé immédiate.
+- **Cadence HD = cadence de la caméra** (plafonnée à 24) : en mode *Faible lumière* (15 i/s) on n'encode pas d'images
+  répétées.
+- **contentHint « detail »** pour le partage d'écran seulement (mode écran de l'encodeur) ; caméra : mode par défaut.
+- **Réglages de la caméra** (`camera.js`) : `getCapabilities()` + `applyConstraints({ advanced })`, un groupe par
+  réglage, seulement les valeurs modifiées (le reste reste au pilote) ; valeurs d'origine relevées à la première ouverture
+  pour « Réinitialiser ». Chrome traite les contraintes d'image à part et ignore alors taille et cadence dans le même
+  appel : on applique d'abord taille + cadence, puis l'ensemble. Stockage `localStorage['csv-cam']` (relu et filtré :
+  clés connues, types vérifiés). CSP inchangée.
+- **Pas de débruitage vidéo côté navigateur** : à 1080p24, il faudrait un filtre temporel WebGL (~50 Mpixels/s), passer
+  toujours par un canvas (perte du chemin direct caméra → encodeur), avec des traînées sur les mouvements et un coût
+  batterie ; le gain est obtenu plus proprement à la source (lumière, 15 i/s, netteté de la caméra).
+
 ### Bande passante — estimations
 
-Débits par couche : vignette 0,07 · 360p 0,45 · **720p 1,2 · 1080p 2,5** · partage d'écran 1,5 (1080p) · voix ~0,026 Mbit/s
+Débits par couche : vignette 0,07 · 360p 0,45 · **720p 1,2 · 1080p 2,5** (1.10 : 2 / 4 à 2 ou 3 personnes) · partage d'écran 1,5 (1080p) · voix ~0,026 Mbit/s
 (Opus 24 kbit/s + en-têtes, 4 voix relayées au plus) ; + ~5 % d'en-têtes WebSocket/TLS.
 
 **Par personne**
 
 | Situation | Montant (envoi) | Descendant (réception) |
 |---|---|---|
-| Tête-à-tête 1080p | ~2,6 Mbit/s | ~2,6 Mbit/s |
+| Tête-à-tête 1080p | ~4,1 Mbit/s (1.10 ; ~2,6 avant) | ~4,1 Mbit/s |
 | Tête-à-tête 720p (mobile en Auto) | ~1,3 Mbit/s | ~1,3 Mbit/s |
 | Mosaïque de 4 en 1080p (grand écran) | ~2,6 Mbit/s | ~7,6 Mbit/s (3 × 2,5) |
 | Orateur à 25, regardé en grand | ≤ 3 Mbit/s (vignette + 360p + 1080p) | ~0,7 Mbit/s |

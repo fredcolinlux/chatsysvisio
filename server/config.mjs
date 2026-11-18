@@ -29,7 +29,10 @@ export function loadConfig(over = {}) {
     videoLoKbps: int(env.VIDEO_LO_KBPS, 70),
     screenKbps: int(env.SCREEN_KBPS, 900),
     video720Kbps: int(env.VIDEO_720_KBPS, 1200),               // couche HD en 720p
-    video1080Kbps: int(env.VIDEO_1080_KBPS, 2500),             // couche HD en 1080p
+    video1080Kbps: int(env.VIDEO_1080_KBPS, 2500),             // couche HD en 1080p (salon chargé, plancher)
+    // 1.10 : débit HD des petits salons (≤ 3 personnes), dégressif jusqu'à VIDEO_*_KBPS au-delà de 6 personnes
+    video720MaxKbps: int(env.VIDEO_720_MAX_KBPS, 2000),
+    video1080MaxKbps: int(env.VIDEO_1080_MAX_KBPS, 4000),
     screenHdKbps: int(env.SCREEN_HD_KBPS, 1500),               // partage d'écran 1080p
     // hauteur max autorisée sur le serveur : 1080 (défaut), 720 ou 360 (pour un lien montant faible)
     videoMaxHeight: [360, 720, 1080].includes(int(env.VIDEO_MAX_HEIGHT, 1080)) ? int(env.VIDEO_MAX_HEIGHT, 1080) : 1080,

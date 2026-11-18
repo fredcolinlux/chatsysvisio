@@ -7,7 +7,8 @@ import { NOTE_NAMES } from './autotune.js';
 import { Effects, PRESETS, drawPreset } from './effects.js';
 import { renderMarkdown } from './markdown.js';
 import { L_LO, L_HI, L_SCREEN, L_HD } from './protocol.js';
-import { QUALITY_OPTIONS, normalizeQuality, ceilingFor, pickLayer } from './quality.js';
+import { QUALITY_OPTIONS, RATE_OPTIONS, normalizeQuality, ceilingFor, pickLayer, hdKbps } from './quality.js';
+import { loadCam, saveCam, frameRateFor, controlsOf, hasControls, advancedFor, resetAdvanced, clampCap, pick, fmtExposure } from './camera.js';
 import { prepare, fromPassword, finish, startSession, inviteUrl, needsPw } from './room-e2ee.js';
 import { encryptFile, decryptFile, sniffImage, b64u, rand } from './e2ee.js';
 import { BoardView } from './board.js';
@@ -28,7 +29,7 @@ const S = {
   bg: localStorage.getItem('cc-bg') || 'none', facing: 'user', fx: loadFx(),
   peers: new Map(), bySid: new Map(), me: null, speakerSid: 0, order: [], page: 0, pinned: null,
   tiles: new Map(), msgs: new Map(), replyTo: null, panel: !isMobile(), view: localStorage.getItem('cc-view') === 'speaker' ? 'speaker' : 'grid', tab: 'chat', unread: 0, joinedAt: 0, typing: new Map(),
-  seen: new Map(), wb: null,
+  seen: new Map(), wb: null, camfx: loadCam(),
 };
 window.__ccState = S; // inspection (tests)
 
@@ -60,7 +61,7 @@ requestAnimationFrame(previewLoop);
 async function getMedia({ audio = true, video = true } = {}) {
   const a = audio ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true, ...(localStorage.getItem('cc-mic') ? { deviceId: { ideal: localStorage.getItem('cc-mic') } } : {}) } : false;
   const camId = localStorage.getItem('cc-camid');
-  const v = video ? { ...camSize(), frameRate: { ideal: 24, max: 30 }, ...(camId && S.facing === 'user' ? { deviceId: { ideal: camId } } : { facingMode: S.facing }) } : false;
+  const v = video ? { ...camSize(), frameRate: frameRateFor(S.camfx), ...(camId && S.facing === 'user' ? { deviceId: { ideal: camId } } : { facingMode: S.facing }) } : false;
   return navigator.mediaDevices.getUserMedia({ audio: a, video: v });
 }
 
@@ -76,7 +77,7 @@ async function applyCameraSize() {
   const vt = S.stream?.getVideoTracks()[0]; if (!vt || vt.readyState !== 'live') return;
   const want = camSize(), st = vt.getSettings();
   if (Math.max(st.width || 0, st.height || 0) === want.width.ideal) return;
-  try { await vt.applyConstraints({ ...want, frameRate: { ideal: 24, max: 30 } }); } catch {}
+  await applyCamControls(advancedFor(camCaps(vt), camDev(vt).set)); // taille + réglages enregistrés
   await new Promise(r => setTimeout(r, 400)); paintQuality();
 }
 function setQuality(q) {
@@ -135,6 +136,7 @@ function setStream(stream) {
   if (S.audio) S.audio.muted = !S.mic;
   setupMeter(stream);
   refreshSelf();
+  applyCamControls();
 }
 
 let meterCtx = null, meterSrc = null, meterRaf = 0;
@@ -388,6 +390,137 @@ function openMicFx() {
     h('div', { class: 'hint' }, icon('mic'), 'Ordre : micro → isolateur de voix (ou réduction de bruit) → autotune → compresseur → dé-esseur → envoi. Tout est calculé sur ton appareil, avant le chiffrement : rien ne part vers un service extérieur. La réduction de bruit légère du navigateur reste toujours active ; l\'interrupteur ajoute RNNoise, nettement plus efficace. L\'isolateur va plus loin (musique, télé, voix lointaines) et inclut la réduction de bruit.'));
 }
 
+// ---------------- Réglages de la caméra (1.10) ----------------
+// Luminosité, contraste, saturation, netteté, exposition, balance des blancs : seulement ceux que la caméra et le
+// navigateur exposent (Chrome / Edge sur ordinateur ; Firefox et Safari n'en exposent pas). Mode faible lumière
+// (15 i/s) et débit HD. Tout est appliqué à chaud sur la piste vidéo, sans rouvrir la caméra.
+const camTrack = () => { const t = S.stream?.getVideoTracks()[0]; return t && t.readyState === 'live' ? t : null; };
+const camCaps = t => { try { return t?.getCapabilities?.() || {}; } catch { return {}; } };
+function camDev(t = camTrack()) {
+  const id = t?.getSettings?.().deviceId || 'default';
+  if (!S.camfx.dev[id]) {
+    // première ouverture de cette caméra : valeurs d'origine (pilote / logiciel du fabricant) relevées pour « Réinitialiser »
+    S.camfx.dev[id] = { set: {}, def: pick(t?.getSettings?.() || {}) };
+    const ids = Object.keys(S.camfx.dev); if (ids.length > 8) delete S.camfx.dev[ids[0]];
+    saveCam(S.camfx);
+  }
+  return S.camfx.dev[id];
+}
+function camConstraints(t = camTrack(), adv = null) {
+  const c = { ...camSize(), frameRate: frameRateFor(S.camfx) };
+  const a = adv || (t ? advancedFor(camCaps(t), camDev(t).set) : []);
+  return a.length ? { ...c, advanced: a } : c;
+}
+let camApplying = Promise.resolve();
+function applyCamControls(adv) {
+  const t = camTrack(); if (!t?.applyConstraints) return camApplying;
+  camApplying = camApplying.then(async () => {
+    if (!adv && !Object.keys(camDev(t).set).length && !S.camfx.lowLight) return; // rien de changé : on laisse le pilote
+    // Deux temps : Chrome traite à part les contraintes d'image (luminosité, exposition…) et ignore alors la taille et
+    // la cadence passées dans le même appel. On applique donc d'abord taille + cadence, puis le tout avec « advanced ».
+    const base = { ...camSize(), frameRate: frameRateFor(S.camfx) }, all = camConstraints(t, adv);
+    try { await t.applyConstraints(base); } catch {}
+    if (all.advanced) { try { await t.applyConstraints(all); } catch {} }
+  }).then(() => paintCam()).catch(() => {});
+  return camApplying;
+}
+let camTimer = 0;
+function setCamCtl(part) {
+  const t = camTrack(); if (!t) return;
+  const d = camDev(t); Object.assign(d.set, part); saveCam(S.camfx);
+  paintCam(); clearTimeout(camTimer); camTimer = setTimeout(() => applyCamControls(), 60);
+}
+function setLowLight(on) { S.camfx.lowLight = on; saveCam(S.camfx); paintCam(); applyCamControls(advancedFor(camCaps(camTrack()), camDev().set)); }
+function setRate(r) { S.camfx.rate = r; saveCam(S.camfx); if (S.engine) S.engine.rate = r; paintCam(); }
+async function resetCam() {
+  const t = camTrack(); if (!t) return;
+  const d = camDev(t); d.set = {}; S.camfx.lowLight = false; saveCam(S.camfx);
+  await applyCamControls(resetAdvanced(camCaps(t), d.def));
+  toast('Réglages de la caméra réinitialisés');
+}
+// Exposition manuelle : curseur logarithmique (de 1/10 000 s à plusieurs centaines de ms, réparties lisiblement).
+const LOG_STEPS = 1000;
+const toLog = (cap, v) => Math.round(Math.log(Math.max(cap.min, v) / Math.max(cap.min, 1e-3)) / Math.log(cap.max / Math.max(cap.min, 1e-3)) * LOG_STEPS);
+const fromLog = (cap, x) => clampCap(cap, Math.max(cap.min, 1e-3) * (cap.max / Math.max(cap.min, 1e-3)) ** (x / LOG_STEPS));
+function camSlider(k, label, cap, { log = false, fmt = v => String(Math.round(v)) } = {}) {
+  const inp = h('input', { type: 'range', class: 'tspeed camr', min: 0, max: log ? LOG_STEPS : cap.max, step: log ? 1 : (cap.step > 0 ? cap.step : 1), 'aria-label': label, dataset: { k, log: log ? '1' : '' },
+    oninput: e => setCamCtl({ [k]: log ? fromLog(cap, +e.target.value) : +e.target.value }) });
+  if (!log) inp.min = String(cap.min);
+  inp._cap = cap; inp._fmt = fmt;
+  return h('div', { class: 'camctl' }, h('div', { class: 'trow' }, h('span', { class: 'tl' }, label), h('span', { class: 'tval', dataset: { v: k } })), inp);
+}
+function camModeSeg(k, label) {
+  return h('div', { class: 'trow camrow' }, h('span', { class: 'tl' }, label),
+    h('div', { class: 'seg cammode', role: 'radiogroup', 'aria-label': label, dataset: { k } },
+      [['continuous', 'Auto'], ['manual', 'Manuel']].map(([v, l]) => h('button', { type: 'button', role: 'radio', dataset: { m: v }, onclick: () => setCamCtl({ [k]: v }) }, l))));
+}
+function camField() {
+  const t = camTrack(), caps = camCaps(t), c = controlsOf(caps), st = t?.getSettings?.() || {};
+  const img = [];
+  if (!t) img.push(h('div', { class: 'camna' }, 'Allume ta caméra pour la régler.'));
+  else if (!hasControls(caps)) img.push(h('div', { class: 'camna' }, 'Ce navigateur ou cette caméra n\'expose pas de réglage d\'image (Chrome ou Edge sur ordinateur requis). Le mode faible lumière et le débit HD restent disponibles.'));
+  else {
+    for (const { k, label, cap } of c.sliders) img.push(camSlider(k, label, cap));
+    if (c.exposure) {
+      img.push(camModeSeg('exposureMode', 'Exposition'));
+      img.push(h('div', { class: 'camsub', dataset: { when: 'exposureMode:manual' } }, camSlider('exposureTime', 'Temps d\'exposition', caps.exposureTime, { log: true, fmt: fmtExposure })));
+    }
+    if (c.exposureComp) img.push(h('div', { class: 'camsub', dataset: { when: 'exposureMode:continuous' } }, camSlider('exposureCompensation', 'Correction d\'exposition', caps.exposureCompensation, { fmt: v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' IL' })));
+    if (c.wb) {
+      img.push(camModeSeg('whiteBalanceMode', 'Balance des blancs'));
+      img.push(h('div', { class: 'camsub', dataset: { when: 'whiteBalanceMode:manual' } }, camSlider('colorTemperature', 'Température', caps.colorTemperature, { fmt: v => Math.round(v) + ' K' })));
+    }
+  }
+  const low = h('button', { type: 'button', class: 'tg camlow', role: 'switch', 'aria-checked': 'false', onclick: () => setLowLight(!S.camfx.lowLight) },
+    h('span', { class: 'tgt' }, h('b', {}, 'Faible lumière'), h('small', {}, '15 images/s : exposition plus longue, nettement moins de grain dans une pièce sombre')), h('span', { class: 'sw', 'aria-hidden': 'true' }));
+  const rate = h('div', { class: 'seg camrate', role: 'radiogroup', 'aria-label': 'Débit HD' },
+    RATE_OPTIONS.map(([v, l, title]) => h('button', { type: 'button', role: 'radio', title, 'aria-label': title, dataset: { r: v }, onclick: () => setRate(v) }, l)));
+  const box = h('div', { class: 'field', id: 'camField' },
+    h('div', { class: 'camnow', 'aria-live': 'polite' }, st.width ? `${t.label || 'Caméra'} · ${st.width}×${st.height}` : ''),
+    img.length ? h('div', { class: 'camset' }, img) : null,
+    h('div', { class: 'toggles fx' }, low),
+    h('div', { class: 'camset' }, h('div', { class: 'trow' }, h('span', { class: 'tl' }, 'Débit HD'), h('span', { class: 'tval camrateval' })), rate, h('div', { class: 'camratehint' })),
+    t ? h('div', { class: 'crow camfoot' }, h('button', { type: 'button', class: 'btn', onclick: resetCam }, 'Réinitialiser')) : null);
+  setTimeout(paintCam, 0);
+  return box;
+}
+function paintCam() {
+  const t = camTrack(), caps = camCaps(t), st = t?.getSettings?.() || {}, set = t ? (S.camfx.dev[st.deviceId || 'default']?.set || {}) : {};
+  const cur = k => set[k] ?? st[k];
+  $$('#camField').forEach(box => {
+    const now = box.querySelector('.camnow');
+    if (now && st.width) { const x = `${t.label || 'Caméra'} · ${st.width}×${st.height} · ${Math.round(st.frameRate || 0)} i/s`; if (now.textContent !== x) now.textContent = x; }
+    box.querySelectorAll('input.camr').forEach(inp => {
+      const k = inp.dataset.k, v = cur(k); if (v == null) return;
+      const pos = inp.dataset.log ? toLog(inp._cap, v) : v;
+      if (document.activeElement !== inp && +inp.value !== pos) inp.value = String(pos);
+      const span = inp.max - inp.min; inp.style.setProperty('--v', (span > 0 ? (inp.value - inp.min) / span * 100 : 0) + '%');
+      const lab = box.querySelector(`.tval[data-v="${k}"]`); if (lab) lab.textContent = inp._fmt(v);
+    });
+    box.querySelectorAll('.cammode').forEach(sg => sg.querySelectorAll('button').forEach(b => { const on = (cur(sg.dataset.k) || 'continuous') === b.dataset.m; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); }));
+    box.querySelectorAll('.camsub').forEach(el => { const [k, v] = el.dataset.when.split(':'); el.hidden = (cur(k) || 'continuous') !== v; });
+    const low = box.querySelector('.camlow'); if (low) { low.classList.toggle('on', S.camfx.lowLight); low.setAttribute('aria-checked', String(S.camfx.lowLight)); }
+    box.querySelectorAll('.camrate button').forEach(b => { const on = b.dataset.r === S.camfx.rate; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+    const br = S.engine?.bitrates || { hd1080: 2500, hd1080max: 4000, hd720: 1200, hd720max: 2000 }, n = S.engine ? S.engine.peersBySid.size + 1 : 0;
+    const h1080 = wantedCeiling() >= 1080, kb = h1080 ? hdKbps(br.hd1080, br.hd1080max, { n, rate: S.camfx.rate }) : hdKbps(br.hd720, br.hd720max, { n, rate: S.camfx.rate });
+    const fmt = k => (k / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + ' Mbit/s';
+    const lo = h1080 ? br.hd1080 : br.hd720, hi = Math.max(lo, h1080 ? br.hd1080max : br.hd720max);
+    const val = box.querySelector('.camrateval'); if (val) val.textContent = `${h1080 ? '1080p' : '720p'} · ${!n && S.camfx.rate === 'auto' && hi > lo ? `${fmt(lo).replace(' Mbit/s', '')} à ${fmt(hi)}` : fmt(kb)}`;
+    const hint = box.querySelector('.camratehint');
+    if (hint) hint.textContent = S.camfx.rate === 'auto' ? (n ? `Salon de ${n} : ${n <= 3 ? 'débit maximal' : n <= 6 ? 'débit intermédiaire' : 'débit standard'}. ` : 'Maximal à 2 ou 3 personnes, réduit au-delà. ') + 'Envoyé seulement à qui t\'affiche en grand.'
+      : S.camfx.rate === 'high' ? 'Toujours au maximum : le plus net, mais plus lourd pour le réseau de chacun.' : 'Débit d\'avant la 1.10 : plus léger, image plus douce.';
+  });
+}
+function camEntry() {
+  return h('div', { class: 'field' }, h('label', {}, 'Image de la caméra'),
+    h('button', { type: 'button', class: 'tg camopen', onclick: openCamera },
+      h('span', { class: 'tgt' }, h('b', {}, 'Réglages de la caméra'), h('small', {}, 'Luminosité, netteté, exposition, faible lumière, débit HD')), icon('cam')));
+}
+function openCamera() {
+  modal('Réglages de la caméra', camField(),
+    h('div', { class: 'hint' }, icon('cam'), 'Le navigateur n\'utilise pas les réglages du logiciel de ta webcam (Logi Tune, G HUB…) : RightLight, HDR ou réduction de bruit du fabricant ne s\'appliquent pas ici. Ferme ce logiciel pendant l\'appel (il peut garder la caméra), éclaire ton visage de face : c\'est ce qui réduit le plus le grain.'));
+}
+
 // ---------------- Démarrage ----------------
 async function boot() {
   // Page restée en cache après une mise à jour du serveur : rechargement avant de rejoindre.
@@ -466,6 +599,7 @@ function renderLobby() {
     h('div', { class: 'field' }, h('label', { for: 'name' }, 'Ton nom'), h('div', { class: 'inp' }, icon('user'), nameIn), accHint),
     pwIn ? h('div', { class: 'field' }, h('label', { for: 'pw' }, 'Mot de passe'), h('div', { class: 'inp' }, icon('lock'), pwIn)) : null,
     h('div', { id: 'devices' }),
+    camEntry(),
     micFxField(),
     h('div', { class: 'field' }, h('label', {}, 'Arrière-plan'), bgPicker()),
     qualityPicker(),
@@ -533,7 +667,8 @@ async function join() {
   if (S.audio.ctx && localStorage.getItem('cc-out')) S.audio.setSink(localStorage.getItem('cc-out'));
   S.audio.onLevel = lvl => { if (S.mic && lvl > 60) { const t = S.tiles.get('p:me'); if (t) t.speakUntil = performance.now() + 300; } };
   S.engine = new Engine({ slug, name, caps: S.caps, quality: S.quality, getCamSource: camSource, ui: UI,
-    isMobile: isMobileDevice, effectsActive: () => !!S.effects?.active, e2ee: S.e2?.session || null });
+    isMobile: isMobileDevice, effectsActive: () => !!S.effects?.active, e2ee: S.e2?.session || null,
+    rate: S.camfx.rate, camFps: () => camTrack()?.getSettings?.().frameRate || 0 });
   if (S.e2?.session) S.e2.session.ka.send = m => S.engine?.send(m);
   S.engine.audio = S.audio;
   S.engine.state = { mic: S.mic, cam: S.cam, screen: false, hand: false };
@@ -639,6 +774,7 @@ function moreMenu(anchor) {
   const pop = h('div', { class: 'popover', role: 'menu' },
     it('sparkle', 'Arrière-plan et appareils', openSettings),
     it('mic', 'Traitement du micro', openMicFx),
+    it('cam', 'Réglages de la caméra', openCamera),
     it('quality', 'Qualité vidéo : ' + QUALITY_OPTIONS.find(o => o[0] === S.quality)[1], openQuality),
     it('qr', 'Inviter (lien + QR code)', openInvite),
     it('users', 'Participants', () => togglePanel('people', true)),
