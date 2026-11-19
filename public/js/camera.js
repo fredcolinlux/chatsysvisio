@@ -6,12 +6,13 @@
 // celle qu'un logiciel du fabricant (Logi Tune, G HUB…) a pu laisser dans la caméra. Les valeurs d'origine sont
 // relevées à la première ouverture de chaque caméra pour pouvoir « Réinitialiser ».
 import { normalizeRate } from './quality.js';
+import { normalizeEnh } from './rehausse.js';
 
 export const CAM_KEY = 'csv-cam';
 export const SLIDERS = [
   ['brightness', 'Luminosité'], ['contrast', 'Contraste'], ['saturation', 'Saturation'], ['sharpness', 'Netteté'],
 ];
-const KEYS = ['brightness', 'contrast', 'saturation', 'sharpness', 'exposureMode', 'exposureTime', 'exposureCompensation', 'whiteBalanceMode', 'colorTemperature'];
+const KEYS = ['brightness', 'contrast', 'saturation', 'sharpness', 'exposureMode', 'exposureTime', 'exposureCompensation', 'whiteBalanceMode', 'colorTemperature', 'zoom'];
 
 export function loadCam(raw = (typeof localStorage !== 'undefined' ? localStorage.getItem(CAM_KEY) : null)) {
   let o = {}; try { o = JSON.parse(raw || '{}') || {}; } catch {}
@@ -20,7 +21,9 @@ export function loadCam(raw = (typeof localStorage !== 'undefined' ? localStorag
     if (typeof id !== 'string' || id.length > 200 || !d || typeof d !== 'object') continue;
     dev[id] = { set: pick(d.set), def: pick(d.def) };
   }
-  return { lowLight: o.lowLight === true, rate: normalizeRate(o.rate), dev };
+  // 1.11 : rehaussement faible lumière (désactivé par défaut), aperçu de soi en miroir (oui par défaut) et en champ
+  // complet (oui par défaut : l'image entière, sans rogner les bords), zoom demandé à la caméra (autorisation « PTZ »).
+  return { lowLight: o.lowLight === true, rate: normalizeRate(o.rate), dev, enh: normalizeEnh(o.enh), mirror: o.mirror !== false, fill: o.fill === true, ptz: o.ptz === true };
 }
 export function saveCam(c) { try { localStorage.setItem(CAM_KEY, JSON.stringify(c)); } catch {} }
 
@@ -54,10 +57,11 @@ export function controlsOf(caps = {}) {
     sliders: SLIDERS.filter(([k]) => ranged(caps[k])).map(([k, label]) => ({ k, label, cap: caps[k] })),
     exposure: Array.isArray(caps.exposureMode) && caps.exposureMode.includes('manual') && caps.exposureMode.includes('continuous') && ranged(caps.exposureTime),
     exposureComp: ranged(caps.exposureCompensation),
+    zoom: ranged(caps.zoom),
     wb: Array.isArray(caps.whiteBalanceMode) && caps.whiteBalanceMode.includes('manual') && caps.whiteBalanceMode.includes('continuous') && ranged(caps.colorTemperature),
   };
 }
-export const hasControls = caps => { const c = controlsOf(caps || {}); return c.sliders.length > 0 || c.exposure || c.exposureComp || c.wb; };
+export const hasControls = caps => { const c = controlsOf(caps || {}); return c.sliders.length > 0 || c.exposure || c.exposureComp || c.wb || c.zoom; };
 
 // Contraintes « advanced » : un groupe par réglage (un refus n'empêche pas les autres), seulement ce qui a été changé.
 export function advancedFor(caps = {}, set = {}) {
@@ -74,6 +78,7 @@ export function advancedFor(caps = {}, set = {}) {
     adv.push(o);
   }
   for (const { k, cap } of c.sliders) if (set[k] != null) adv.push({ [k]: clampCap(cap, set[k]) });
+  if (c.zoom && set.zoom != null) adv.push({ zoom: clampCap(caps.zoom, set.zoom) });
   return adv;
 }
 
@@ -84,8 +89,19 @@ export function resetAdvanced(caps = {}, def = {}) {
   if (c.exposureComp && def.exposureCompensation != null) adv.push({ exposureCompensation: clampCap(caps.exposureCompensation, def.exposureCompensation) });
   if (c.wb) adv.push(def.whiteBalanceMode === 'manual' && def.colorTemperature != null ? { whiteBalanceMode: 'manual', colorTemperature: clampCap(caps.colorTemperature, def.colorTemperature) } : { whiteBalanceMode: 'continuous' });
   for (const { k, cap } of c.sliders) if (def[k] != null) adv.push({ [k]: clampCap(cap, def[k]) });
+  if (c.zoom && def.zoom != null) adv.push({ zoom: clampCap(caps.zoom, def.zoom) });
   return adv;
 }
+
+// Zoom : « ×1,3 » ; un zoom au-dessus du minimum recadre l'image (champ réduit).
+export const fmtZoom = (v, cap) => '×' + (cap?.min > 0 ? v / cap.min : v).toLocaleString('fr-FR', { maximumFractionDigits: 2 });
+export const zoomed = (caps = {}, st = {}) => ranged(caps.zoom) && typeof st.zoom === 'number' && st.zoom > caps.zoom.min + (caps.zoom.step || 0) / 2;
+
+// Contrainte de base demandée à la caméra (ouverture et réglage à chaud).
+// resizeMode « none » en préférence (pas exigé) : on veut un mode natif du capteur, pas une image recadrée et
+// redimensionnée par le navigateur pour coller exactement à la taille demandée (Chrome : « crop-and-scale » par défaut).
+// Si aucun mode natif ne convient (ex. pas de 15 i/s natif en faible lumière), le navigateur revient au recadrage.
+export const resizeModeFor = () => ({ resizeMode: { ideal: 'none' } });
 
 // exposureTime est exprimé en centaines de microsecondes (spécification Image Capture).
 export function fmtExposure(v) {

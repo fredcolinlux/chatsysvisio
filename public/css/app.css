@@ -177,6 +177,8 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.75;str
 .tile canvas,.tile video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#16181d}
 .tile.contain canvas{object-fit:contain}
 .tile.mirror canvas,.tile.mirror video{transform:scaleX(-1)}
+/* 1.11 : aperçu de soi en champ complet (toute l'image de la caméra, bandes discrètes si la vignette n'a pas le même format) */
+.tile.fit:not(.small):not(.selfpip) video,.tile.fit:not(.small):not(.selfpip) canvas{object-fit:contain}
 .tile .ph{position:absolute;inset:0;display:grid;place-items:center;background:var(--tile)}
 .tile .ph .av{width:80px;height:80px;font-size:28px}
 .tile.small .ph .av{width:44px;height:44px;font-size:16px}
@@ -197,7 +199,7 @@ button.pill{cursor:pointer}
 
 /* ---------- Salon d'attente ---------- */
 .lobby{flex:1;display:grid;grid-template-columns:1.35fr 1fr;gap:40px;padding:32px 40px;align-items:center;max-width:1180px;margin:0 auto;width:100%;overflow:auto}
-.preview{aspect-ratio:16/10;border-radius:var(--r-xl);box-shadow:0 0 0 1px var(--line),0 16px 40px -12px rgba(5,8,15,.5)}
+.preview{aspect-ratio:16/9;border-radius:var(--r-xl);box-shadow:0 0 0 1px var(--line),0 16px 40px -12px rgba(5,8,15,.5)}
 .preview .ctrl{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);display:flex;gap:10px;z-index:2}
 .rb{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:rgba(14,17,23,.5);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
 .rb.off{background:var(--bad-solid);box-shadow:none}
@@ -810,3 +812,13 @@ body.idle.incall .stage{cursor:none}
 .tg.camopen svg.i{margin-left:auto;color:var(--muted);width:18px;height:18px;flex:none}
 @media (max-width:760px){.camset .cammode button{height:34px}.camset .camrate button{height:36px}}
 @media (prefers-reduced-motion:reduce){.camset{animation:none}}
+/* ---- Rehaussement faible lumière, zoom, aperçu (1.11) ---- */
+.enhset[hidden]{display:none}
+.enhnow{font-size:12px;color:var(--muted);line-height:1.4;font-feature-settings:"tnum";min-height:16px}
+.enhnow:empty{display:none}
+.toggles.fx:has(.camenh),.toggles.fx:has(.camenhwb){margin:0}
+.camzoom{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--muted);line-height:1.4}
+.camzoom .btn{flex:none}
+.camsec{font-size:12px;font-weight:600;color:var(--fg2);letter-spacing:.01em;margin:6px 2px -2px}
+.tg:disabled{opacity:.55}
+@media (max-width:760px){.camzoom{flex-wrap:wrap}.camzoom .btn{height:36px}}

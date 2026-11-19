@@ -9,12 +9,12 @@ const C920 = { brightness: { min: 0, max: 255, step: 1 }, contrast: { min: 0, ma
   exposureMode: ['manual', 'continuous'], exposureTime: { min: 1, max: 2047, step: 1 }, whiteBalanceMode: ['manual', 'continuous'], colorTemperature: { min: 2000, max: 6500, step: 10 } };
 
 test('caméra : lecture robuste du stockage (JSON cassé, clés inconnues, types faux)', () => {
-  assert.deepEqual(loadCam('{pas du json'), { lowLight: false, rate: 'auto', dev: {} });
+  assert.deepEqual(loadCam('{pas du json'), { lowLight: false, rate: 'auto', dev: {}, enh: { on: false, k: 0.6, wb: false }, mirror: true, fill: false, ptz: false });
   const c = loadCam(JSON.stringify({ lowLight: true, rate: 'high', dev: { a: { set: { brightness: 120, evil: '<script>', exposureMode: 'x', sharpness: '9' }, def: { brightness: 128 } } } }));
   assert.equal(c.lowLight, true); assert.equal(c.rate, 'high');
   assert.deepEqual(c.dev.a.set, { brightness: 120 }); assert.deepEqual(c.dev.a.def, { brightness: 128 });
   assert.equal(loadCam(JSON.stringify({ rate: 'turbo' })).rate, 'auto');
-  assert.deepEqual(pick({ whiteBalanceMode: 'manual', colorTemperature: 4500, zoom: 3 }), { whiteBalanceMode: 'manual', colorTemperature: 4500 });
+  assert.deepEqual(pick({ whiteBalanceMode: 'manual', colorTemperature: 4500, zoom: 3, pan: 2 }), { whiteBalanceMode: 'manual', colorTemperature: 4500, zoom: 3 });
 });
 
 test('caméra : cadence normale et faible lumière', () => {

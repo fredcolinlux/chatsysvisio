@@ -67,11 +67,13 @@ export class Effects {
     if (mode === 'none') return;
     await this.load();
   }
-  // Renvoie un canvas composé (ou null si inactif). src : <video> caméra.
+  // Renvoie un canvas composé (ou null si inactif). src : <video> caméra ou canvas déjà rehaussé.
   // maxSide : côté long voulu (640 pour 360p, 1280 pour 720p, 1920 pour 1080p).
   render(src, maxSide = 640) {
-    if (!this.active || !src.videoWidth) return null;
-    const vw = src.videoWidth, vh = src.videoHeight, s = Math.min(1, Math.min(maxSide, this.composeCap) / Math.max(vw, vh));
+    // src : <video> caméra, ou canvas du rehaussement faible lumière (1.11)
+    const vw = src.videoWidth || src.width || 0, vh = src.videoHeight || src.height || 0;
+    if (!this.active || !vw) return null;
+    const s = Math.min(1, Math.min(maxSide, this.composeCap) / Math.max(vw, vh));
     const w = Math.round(vw * s / 2) * 2, h = Math.round(vh * s / 2) * 2;
     if (this.out.width !== w || this.out.height !== h) { this.out.width = this.person.width = w; this.out.height = this.person.height = h; }
     const t0 = performance.now();

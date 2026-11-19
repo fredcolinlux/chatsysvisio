@@ -8,7 +8,8 @@ import { Effects, PRESETS, drawPreset } from './effects.js';
 import { renderMarkdown } from './markdown.js';
 import { L_LO, L_HI, L_SCREEN, L_HD } from './protocol.js';
 import { QUALITY_OPTIONS, RATE_OPTIONS, normalizeQuality, ceilingFor, pickLayer, hdKbps } from './quality.js';
-import { loadCam, saveCam, frameRateFor, controlsOf, hasControls, advancedFor, resetAdvanced, clampCap, pick, fmtExposure } from './camera.js';
+import { loadCam, saveCam, frameRateFor, controlsOf, hasControls, advancedFor, resetAdvanced, clampCap, pick, fmtExposure, fmtZoom, zoomed, resizeModeFor } from './camera.js';
+import { Rehausse } from './rehausse.js';
 import { prepare, fromPassword, finish, startSession, inviteUrl, needsPw } from './room-e2ee.js';
 import { encryptFile, decryptFile, sniffImage, b64u, rand } from './e2ee.js';
 import { BoardView } from './board.js';
@@ -33,6 +34,23 @@ const S = {
 };
 window.__ccState = S; // inspection (tests)
 
+// ---------------- Rehaussement faible lumière (1.11) ----------------
+function ensureEnh() {
+  S.enh ||= new Rehausse({ onFallback: msg => { toast(msg, { ms: 6000 }); S.camfx.enh.on = false; saveCam(S.camfx); refreshSelf(); paintCam(); } });
+  S.enh.set(S.camfx.enh); return S.enh;
+}
+function setEnh(part) {
+  S.camfx.enh = { ...S.camfx.enh, ...part }; saveCam(S.camfx);
+  ensureEnh(); lastCam.t = 0; refreshSelf(); paintCam(); paintQuality();
+  if ('on' in part) applyCameraSize(); // sur mobile, le rehaussement limite à 720p comme le flou
+}
+// Aperçu de soi : miroir (caméra avant, option), champ complet (contain) ou rempli (cover). L'envoi n'est jamais inversé.
+const selfMirror = () => S.facing === 'user' && S.camfx.mirror;
+function paintSelfView() {
+  $$('.tile.me, #selfPreview').forEach(t => { t.classList.toggle('mirror', selfMirror()); t.classList.toggle('fit', !S.camfx.fill); });
+}
+function setSelfView(part) { Object.assign(S.camfx, part); saveCam(S.camfx); paintSelfView(); paintCam(); }
+
 // ---------------- Caméra locale + effets ----------------
 let lastCam = { t: 0, v: null };
 function camSource(wantH = S.engine?.wantH || 360) {
@@ -43,17 +61,29 @@ function camSource(wantH = S.engine?.wantH || 360) {
   // Composition de l'arrière-plan à la taille réellement demandée (640 px pour 360p … 1920 px pour 1080p)
   const side = wantH >= 1080 ? 1920 : wantH >= 720 ? 1280 : 640;
   if (now - lastCam.t < 25 && lastCam.v && lastCam.side >= side) return lastCam.v;
-  const out = S.effects?.active ? S.effects.render(v, side) : null;
+  // 1.11 : rehaussement faible lumière d'abord (WebGL2), puis le flou / fond travaille sur l'image rehaussée
+  // (segmentation et composition partagent ce même canvas : pas de copie supplémentaire de la vidéo).
+  const enh = S.enh?.active ? S.enh.render(v, side) : null;
+  const base = enh || v;
+  const out = S.effects?.active ? S.effects.render(base, side) : enh;
   lastCam = { t: now, side, v: out ? { el: out, w: out.width, h: out.height } : { el: v, w: v.videoWidth, h: v.videoHeight } };
   return lastCam.v;
 }
+// Image traitée (rehaussement ou arrière-plan) : l'aperçu de soi affiche le canvas plutôt que la vidéo brute.
+const processing = () => !!(S.effects?.active || S.enh?.active);
+// Taille à traiter pour l'aperçu : assez grande pour une grande vignette, sans dépasser ce qui part vraiment.
+function previewH() {
+  let need = 360;
+  for (const c of previews) { if (!c.isConnected) continue; const r = c.parentElement?.getBoundingClientRect(); if (r && r.width * devicePixelRatio > 900) need = 720; }
+  return Math.max(S.engine?.wantH || 360, need);
+}
 const previews = new Set(); // canvas d'aperçu (lobby, vignette perso) à rafraîchir quand un effet est actif
 function previewLoop() {
-  if (S.effects?.active && S.cam) {
-    const src = camSource();
+  if (processing() && S.cam) {
+    const src = camSource(previewH());
     if (src) for (const c of previews) { if (c.width !== src.w || c.height !== src.h) { c.width = src.w; c.height = src.h; } c.getContext('2d').drawImage(src.el, 0, 0); }
   }
-  for (const c of previews) c.hidden = !(S.effects?.active && S.cam);
+  for (const c of previews) c.hidden = !(processing() && S.cam);
   requestAnimationFrame(previewLoop);
 }
 requestAnimationFrame(previewLoop);
@@ -61,15 +91,20 @@ requestAnimationFrame(previewLoop);
 async function getMedia({ audio = true, video = true } = {}) {
   const a = audio ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true, ...(localStorage.getItem('cc-mic') ? { deviceId: { ideal: localStorage.getItem('cc-mic') } } : {}) } : false;
   const camId = localStorage.getItem('cc-camid');
-  const v = video ? { ...camSize(), frameRate: frameRateFor(S.camfx), ...(camId && S.facing === 'user' ? { deviceId: { ideal: camId } } : { facingMode: S.facing }) } : false;
-  return navigator.mediaDevices.getUserMedia({ audio: a, video: v });
+  const v = video ? { ...camSize(), ...resizeModeFor(), frameRate: frameRateFor(S.camfx), ...(S.camfx.ptz ? { zoom: true } : {}), ...(camId && S.facing === 'user' ? { deviceId: { ideal: camId } } : { facingMode: S.facing }) } : false;
+  try { return await navigator.mediaDevices.getUserMedia({ audio: a, video: v }); }
+  catch (e) {
+    // navigateur qui refuse resizeMode / zoom : nouvel essai avec les seules contraintes historiques
+    if (!v || e?.name === 'NotAllowedError' || e?.name === 'NotFoundError') throw e;
+    const { resizeMode, zoom, ...v0 } = v; return navigator.mediaDevices.getUserMedia({ audio: a, video: v0 });
+  }
 }
 
 // ---------------- Qualité d'envoi (Auto / 360p / 720p / 1080p / Éco) ----------------
 function wantedCeiling() {
   const c = S.engine?.codecs.video;
   const max = S.caps ? Math.max(0, ...Object.values(S.caps.vmax || {})) : 1080;
-  return ceilingFor(S.quality, { mobile: isMobileDevice(), effects: S.bg !== 'none', codec: c, deviceMax: max || 360, serverMax: S.engine?.maxHeight || 1080 });
+  return ceilingFor(S.quality, { mobile: isMobileDevice(), effects: S.bg !== 'none' || S.camfx.enh.on, codec: c, deviceMax: max || 360, serverMax: S.engine?.maxHeight || 1080 });
 }
 // Résolution demandée à la caméra : 1080p seulement si on peut l'envoyer, sinon 720p (aperçu net, coût modéré).
 function camSize() { return wantedCeiling() >= 1080 ? { width: { ideal: 1920 }, height: { ideal: 1080 } } : { width: { ideal: 1280 }, height: { ideal: 720 } }; }
@@ -407,7 +442,7 @@ function camDev(t = camTrack()) {
   return S.camfx.dev[id];
 }
 function camConstraints(t = camTrack(), adv = null) {
-  const c = { ...camSize(), frameRate: frameRateFor(S.camfx) };
+  const c = { ...camSize(), ...resizeModeFor(), frameRate: frameRateFor(S.camfx) };
   const a = adv || (t ? advancedFor(camCaps(t), camDev(t).set) : []);
   return a.length ? { ...c, advanced: a } : c;
 }
@@ -418,7 +453,7 @@ function applyCamControls(adv) {
     if (!adv && !Object.keys(camDev(t).set).length && !S.camfx.lowLight) return; // rien de changé : on laisse le pilote
     // Deux temps : Chrome traite à part les contraintes d'image (luminosité, exposition…) et ignore alors la taille et
     // la cadence passées dans le même appel. On applique donc d'abord taille + cadence, puis le tout avec « advanced ».
-    const base = { ...camSize(), frameRate: frameRateFor(S.camfx) }, all = camConstraints(t, adv);
+    const base = { ...camSize(), ...resizeModeFor(), frameRate: frameRateFor(S.camfx) }, all = camConstraints(t, adv);
     try { await t.applyConstraints(base); } catch {}
     if (all.advanced) { try { await t.applyConstraints(all); } catch {} }
   }).then(() => paintCam()).catch(() => {});
@@ -434,7 +469,8 @@ function setLowLight(on) { S.camfx.lowLight = on; saveCam(S.camfx); paintCam(); 
 function setRate(r) { S.camfx.rate = r; saveCam(S.camfx); if (S.engine) S.engine.rate = r; paintCam(); }
 async function resetCam() {
   const t = camTrack(); if (!t) return;
-  const d = camDev(t); d.set = {}; S.camfx.lowLight = false; saveCam(S.camfx);
+  const d = camDev(t); d.set = {}; S.camfx.lowLight = false; S.camfx.enh = { ...S.camfx.enh, on: false, k: 0.6, wb: false }; saveCam(S.camfx);
+  ensureEnh(); refreshSelf();
   await applyCamControls(resetAdvanced(camCaps(t), d.def));
   toast('Réglages de la caméra réinitialisés');
 }
@@ -470,19 +506,65 @@ function camField() {
       img.push(camModeSeg('whiteBalanceMode', 'Balance des blancs'));
       img.push(h('div', { class: 'camsub', dataset: { when: 'whiteBalanceMode:manual' } }, camSlider('colorTemperature', 'Température', caps.colorTemperature, { fmt: v => Math.round(v) + ' K' })));
     }
+    if (c.zoom) {
+      img.push(camSlider('zoom', 'Zoom', caps.zoom, { fmt: v => fmtZoom(v, caps.zoom) }));
+      img.push(h('div', { class: 'crow camzoom' }, h('span', { class: 'camzoomhint' }),
+        h('button', { type: 'button', class: 'btn sm', onclick: () => setCamCtl({ zoom: caps.zoom.min }) }, 'Champ complet')));
+    }
+  }
+  // Zoom : Chrome ne l'expose qu'avec l'autorisation « déplacer la caméra » (PTZ), demandée seulement à la demande.
+  let zoomAsk = null;
+  if (t && !c.zoom) {
+    if (!S.camfx.ptz && navigator.userAgentData) zoomAsk = h('div', { class: 'crow camzoom' }, h('span', { class: 'camzoomhint' }, 'Un logiciel du fabricant peut avoir laissé un zoom dans la caméra (image recadrée).'),
+      h('button', { type: 'button', class: 'btn sm', id: 'camPtz', onclick: allowZoom }, 'Régler le zoom'));
+    else if (S.camfx.ptz) zoomAsk = h('div', { class: 'camna' }, 'Cette caméra n\'expose pas de zoom au navigateur : le champ est celui du capteur.');
   }
   const low = h('button', { type: 'button', class: 'tg camlow', role: 'switch', 'aria-checked': 'false', onclick: () => setLowLight(!S.camfx.lowLight) },
     h('span', { class: 'tgt' }, h('b', {}, 'Faible lumière'), h('small', {}, '15 images/s : exposition plus longue, nettement moins de grain dans une pièce sombre')), h('span', { class: 'sw', 'aria-hidden': 'true' }));
   const rate = h('div', { class: 'seg camrate', role: 'radiogroup', 'aria-label': 'Débit HD' },
     RATE_OPTIONS.map(([v, l, title]) => h('button', { type: 'button', role: 'radio', title, 'aria-label': title, dataset: { r: v }, onclick: () => setRate(v) }, l)));
+  const sw = (cls, title, sub, on) => h('button', { type: 'button', class: 'tg ' + cls, role: 'switch', 'aria-checked': 'false', onclick: on },
+    h('span', { class: 'tgt' }, h('b', {}, title), h('small', {}, sub)), h('span', { class: 'sw', 'aria-hidden': 'true' }));
+  const enh = sw('camenh', 'Rehaussement faible lumière', 'Éclaircit les ombres et lisse le grain sur la carte graphique, sans brûler les LED. Léger flou sur les mouvements rapides.', () => setEnh({ on: !S.camfx.enh.on }));
+  const enhK = h('input', { type: 'range', class: 'tspeed enhk', min: 0, max: 100, step: 5, 'aria-label': 'Intensité du rehaussement', oninput: e => setEnh({ k: +e.target.value / 100 }) });
+  const enhWb = sw('camenhwb', 'Balance des blancs auto', 'Atténue une dominante de couleur (limitée à ±25\u00a0% par couleur, les LED vives ne comptent pas).', () => setEnh({ wb: !S.camfx.enh.wb }));
+  const enhBox = h('div', { class: 'camset enhset' },
+    h('div', { class: 'camctl' }, h('div', { class: 'trow' }, h('span', { class: 'tl' }, 'Intensité'), h('span', { class: 'tval enhkval' })), enhK),
+    h('div', { class: 'toggles fx' }, enhWb), h('div', { class: 'enhnow', 'aria-live': 'polite' }));
+  const view = h('div', { class: 'toggles fx' },
+    sw('cammirror', 'Aperçu en miroir', 'Comme dans une glace. Les autres te voient toujours à l\'endroit.', () => setSelfView({ mirror: !S.camfx.mirror })),
+    sw('camfull', 'Champ complet', 'Toute l\'image de la caméra, sans rogner les bords de l\'aperçu.', () => setSelfView({ fill: !S.camfx.fill })));
   const box = h('div', { class: 'field', id: 'camField' },
     h('div', { class: 'camnow', 'aria-live': 'polite' }, st.width ? `${t.label || 'Caméra'} · ${st.width}×${st.height}` : ''),
-    img.length ? h('div', { class: 'camset' }, img) : null,
+    img.length ? h('div', { class: 'camset' }, img) : null, zoomAsk,
+    h('div', { class: 'toggles fx' }, enh), enhBox,
     h('div', { class: 'toggles fx' }, low),
     h('div', { class: 'camset' }, h('div', { class: 'trow' }, h('span', { class: 'tl' }, 'Débit HD'), h('span', { class: 'tval camrateval' })), rate, h('div', { class: 'camratehint' })),
+    h('div', { class: 'camsec' }, 'Aperçu de toi'), view,
     t ? h('div', { class: 'crow camfoot' }, h('button', { type: 'button', class: 'btn', onclick: resetCam }, 'Réinitialiser')) : null);
   setTimeout(paintCam, 0);
   return box;
+}
+async function allowZoom() {
+  S.camfx.ptz = true; saveCam(S.camfx);
+  try {
+    const vs = await getMedia({ audio: false, video: true });
+    setStream(new MediaStream([...(S.stream?.getAudioTracks() || []), ...vs.getVideoTracks()]));
+    S.engine?.setState({ cam: true }); S.cam = true;
+  } catch { S.camfx.ptz = false; saveCam(S.camfx); toast('Autorisation du zoom refusée : rien n\'a changé.', { error: true }); }
+  await new Promise(r => setTimeout(r, 300));
+  $$('#camField').forEach(b => b.replaceWith(camField()));
+}
+function enhStatus() {
+  const e = S.enh, i = e?.info;
+  if (!S.camfx.enh.on) return '';
+  if (!i || i.mode === 'off' || i.failed) return 'Indisponible sur cet appareil.';
+  if (!S.cam) return 'En attente de la caméra.';
+  const how = i.mode === 'webgl2' ? 'Carte graphique (WebGL2)' : 'Mode simplifié (sans WebGL2) : éclaircissement seul';
+  const res = i.side ? (i.side >= 1900 ? '1080p' : i.side >= 1270 ? '720p' : '360p') : '';
+  const cost = i.cost ? `${i.cost.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}\u00a0ms par image` : '';
+  const lite = i.level === 1 ? 'filtre allégé' : i.level >= 2 ? 'limité à 720p (appareil lent)' : '';
+  return [how, res, cost, i.fps ? `${i.fps}\u00a0i/s` : '', lite].filter(Boolean).join(' · ');
 }
 function paintCam() {
   const t = camTrack(), caps = camCaps(t), st = t?.getSettings?.() || {}, set = t ? (S.camfx.dev[st.deviceId || 'default']?.set || {}) : {};
@@ -499,7 +581,14 @@ function paintCam() {
     });
     box.querySelectorAll('.cammode').forEach(sg => sg.querySelectorAll('button').forEach(b => { const on = (cur(sg.dataset.k) || 'continuous') === b.dataset.m; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); }));
     box.querySelectorAll('.camsub').forEach(el => { const [k, v] = el.dataset.when.split(':'); el.hidden = (cur(k) || 'continuous') !== v; });
-    const low = box.querySelector('.camlow'); if (low) { low.classList.toggle('on', S.camfx.lowLight); low.setAttribute('aria-checked', String(S.camfx.lowLight)); }
+    const tgl = (sel, on) => { const b = box.querySelector(sel); if (b) { b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); } };
+    tgl('.camlow', S.camfx.lowLight); tgl('.camenh', S.camfx.enh.on); tgl('.camenhwb', S.camfx.enh.wb); tgl('.cammirror', S.camfx.mirror); tgl('.camfull', !S.camfx.fill);
+    const es = box.querySelector('.enhset'); if (es) es.hidden = !S.camfx.enh.on;
+    const ek = box.querySelector('input.enhk'); if (ek) { const v = Math.round(S.camfx.enh.k * 100); if (document.activeElement !== ek) ek.value = String(v); ek.style.setProperty('--v', v + '%'); }
+    const ekv = box.querySelector('.enhkval'); if (ekv) ekv.textContent = Math.round(S.camfx.enh.k * 100) + ' %';
+    const en = box.querySelector('.enhnow'); if (en) { const x = enhStatus(); if (en.textContent !== x) en.textContent = x; }
+    const zh = box.querySelector('.camzoom .camzoomhint'); if (zh && t && controlsOf(caps).zoom) zh.textContent = zoomed(caps, { zoom: cur('zoom') }) ? 'Zoom actif : l\'image est recadrée.' : 'Champ complet du capteur.';
+    const mir = box.querySelector('.cammirror'); if (mir) mir.disabled = S.facing !== 'user';
     box.querySelectorAll('.camrate button').forEach(b => { const on = b.dataset.r === S.camfx.rate; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
     const br = S.engine?.bitrates || { hd1080: 2500, hd1080max: 4000, hd720: 1200, hd720max: 2000 }, n = S.engine ? S.engine.peersBySid.size + 1 : 0;
     const h1080 = wantedCeiling() >= 1080, kb = h1080 ? hdKbps(br.hd1080, br.hd1080max, { n, rate: S.camfx.rate }) : hdKbps(br.hd720, br.hd720max, { n, rate: S.camfx.rate });
@@ -514,11 +603,12 @@ function paintCam() {
 function camEntry() {
   return h('div', { class: 'field' }, h('label', {}, 'Image de la caméra'),
     h('button', { type: 'button', class: 'tg camopen', onclick: openCamera },
-      h('span', { class: 'tgt' }, h('b', {}, 'Réglages de la caméra'), h('small', {}, 'Luminosité, netteté, exposition, faible lumière, débit HD')), icon('cam')));
+      h('span', { class: 'tgt' }, h('b', {}, 'Réglages de la caméra'), h('small', {}, 'Rehaussement faible lumière, luminosité, exposition, zoom, miroir, débit HD')), icon('cam')));
 }
 function openCamera() {
-  modal('Réglages de la caméra', camField(),
-    h('div', { class: 'hint' }, icon('cam'), 'Le navigateur n\'utilise pas les réglages du logiciel de ta webcam (Logi Tune, G HUB…) : RightLight, HDR ou réduction de bruit du fabricant ne s\'appliquent pas ici. Ferme ce logiciel pendant l\'appel (il peut garder la caméra), éclaire ton visage de face : c\'est ce qui réduit le plus le grain.'));
+  const bg = modal('Réglages de la caméra', camField(),
+    h('div', { class: 'hint' }, icon('cam'), 'Le navigateur n\'utilise pas les réglages du logiciel de ta webcam (Logi Tune, G HUB…) : RightLight, HDR ou réduction de bruit du fabricant ne s\'appliquent pas ici. Le rehaussement faible lumière fait un travail comparable dans le navigateur. Ferme ce logiciel pendant l\'appel (il peut garder la caméra) ; une lampe face à toi reste ce qui réduit le plus le grain.'));
+  const tm = setInterval(() => { if (!bg?.isConnected) return clearInterval(tm); const en = $('.enhnow', bg); if (en) { const x = enhStatus(); if (en.textContent !== x) en.textContent = x; } }, 1000);
 }
 
 // ---------------- Démarrage ----------------
@@ -546,6 +636,7 @@ async function boot() {
   renderLobby();
   await startMedia();
   if (S.bg !== 'none') setBackground(S.bg, { silent: true });
+  if (S.camfx.enh.on) { ensureEnh(); refreshSelf(); }
   const ds = $('#devices'); if (ds) ds.replaceChildren(await deviceSelects());
   refreshButtons();
 }
@@ -560,7 +651,7 @@ function selfTileContent(cls = '') {
 function renderLobby() {
   const i = S.info;
   const [v, c] = selfTileContent();
-  const preview = h('div', { class: 'tile preview mirror', id: 'selfPreview' }, v, c,
+  const preview = h('div', { class: 'tile preview' + (selfMirror() ? ' mirror' : '') + (S.camfx.fill ? '' : ' fit'), id: 'selfPreview' }, v, c,
     h('div', { class: 'ph', id: 'lobbyPh', hidden: true }, avatar(myName() || 'Moi')),
     h('div', { class: 'meter' }, h('span', { class: 'pill' }, icon('mic'), h('span', { class: 'meterbar' }, h('i')))),
     h('div', { class: 'ctrl' },
@@ -613,7 +704,8 @@ function renderLobby() {
 
 function refreshSelf() {
   const camOn = S.cam && S.stream?.getVideoTracks().some(t => t.readyState === 'live');
-  $$('.selfvid').forEach(v => v.hidden = !camOn || !!S.effects?.active);
+  $$('.selfvid').forEach(v => v.hidden = !camOn || processing());
+  paintSelfView();
   $$('#lobbyPh, .tile.me .ph').forEach(p => p.hidden = camOn);
   const t = S.tiles.get('p:me'); if (t) updateTile(t);
 }
@@ -821,7 +913,7 @@ async function flipCamera() {
   S.facing = S.facing === 'user' ? 'environment' : 'user';
   try { setStream(await getMedia({ audio: S.stream?.getAudioTracks().length > 0, video: true })); S.cam = true; S.engine?.setState({ cam: true }); }
   catch { toast('Pas d\'autre caméra.', { error: true }); }
-  $$('.tile.me, #selfPreview').forEach(t => t.classList.toggle('mirror', S.facing === 'user'));
+  paintSelfView();
   refreshButtons();
 }
 async function toggleScreen() {
@@ -1215,7 +1307,7 @@ function makeTile(key, peer, kind) {
   const canvas = h('canvas'); const ph = h('div', { class: 'ph' }, avatar(peer.name));
   const lab = h('div', { class: 'lab' }); const tr = h('div', { class: 'tr' });
   const el = h('div', { class: 'tile' + (kind === 'screen' ? ' contain' : '') + (isMe ? ' me' : ''), dataset: { key } });
-  if (isMe && kind === 'cam') { const [v, c] = selfTileContent(); el.append(v, c); if (S.facing === 'user') el.classList.add('mirror'); canvas.hidden = true; }
+  if (isMe && kind === 'cam') { const [v, c] = selfTileContent(); el.append(v, c); el.classList.toggle('mirror', selfMirror()); el.classList.toggle('fit', !S.camfx.fill); canvas.hidden = true; }
   el.append(canvas, ph, lab, tr);
   if (!isMe) el.addEventListener('dblclick', () => { S.pinned = S.pinned === key ? null : key; layout(); });
   const t = { key, el, canvas, ctx: canvas.getContext('2d'), ph, lab, tr, peer, kind, lastFrame: 0, lastHi: 0, speakUntil: 0, isMe };
