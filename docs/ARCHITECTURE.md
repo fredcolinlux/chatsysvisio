@@ -85,7 +85,7 @@ Une seule couche HD par émetteur : tous ceux qui l'affichent en grand reçoiven
 est appliqué sur l'image composée à la taille demandée (640, 1280 ou 1920 px). Le détourage coûte ainsi le même prix
 qu'en 360p ; seule la composition (2 `drawImage` + filtre de flou) grandit. Garde-fou : au-delà de 45 ms par image, la
 composition redescend d'abord à 1280 px, puis le détourage passe à une image sur deux, et au-delà de 90 ms il se coupe.
-Sur mobile, flou + 1080p est exclu d'office (720p max) : chauffe et batterie.
+Sur mobile, flou + 1080p est exclu d'office (720p max) : chauffe et batterie (1.11 : idem avec le rehaussement faible lumière).
 
 ### Image caméra (1.10)
 
@@ -105,9 +105,43 @@ Sur mobile, flou + 1080p est exclu d'office (720p max) : chauffe et batterie.
   pour « Réinitialiser ». Chrome traite les contraintes d'image à part et ignore alors taille et cadence dans le même
   appel : on applique d'abord taille + cadence, puis l'ensemble. Stockage `localStorage['csv-cam']` (relu et filtré :
   clés connues, types vérifiés). CSP inchangée.
-- **Pas de débruitage vidéo côté navigateur** : à 1080p24, il faudrait un filtre temporel WebGL (~50 Mpixels/s), passer
-  toujours par un canvas (perte du chemin direct caméra → encodeur), avec des traînées sur les mouvements et un coût
-  batterie ; le gain est obtenu plus proprement à la source (lumière, 15 i/s, netteté de la caméra).
+- **1.10 : pas de débruitage vidéo** ; la 1.11 l'ajoute en **option** (désactivé par défaut), voir ci-dessous : la
+  vidéo passe alors par un canvas (le chemin direct caméra → encodeur n'existe plus quand l'option est active).
+
+### Rehaussement faible lumière, champ et miroir (1.11)
+
+- **Chaîne** (`rehausse.js`, `room.js` → `camSource`) : caméra → **rehaussement** (canvas WebGL2) → [flou / fond :
+  segmentation et composition sur le canvas rehaussé, aucune copie supplémentaire de la vidéo] → encodeur. Le
+  rehaussement traite à la taille réellement demandée (640 px pour 360p … 1920 px pour 1080p) et une seule fois par image
+  caméra (`requestVideoFrameCallback`).
+- **Passe 1, débruitage** (une texture RGBA16F en ping-pong, RGBA8 si `EXT_color_buffer_float` manque) : bilatéral 5×5
+  (σ spatial ≈ 1,6 px, σ de ressemblance 0,02 + 0,05 × intensité), chrominance moyennée sur 3×3 points espacés de 2,5 px
+  (pondérée par la seule luminance : le bruit couleur des webcams forme des taches), puis **mélange temporel récursif**
+  avec l'image précédente (poids 0,4 + 0,45 × intensité), coupé pixel par pixel par une détection de mouvement
+  (`smoothstep(0,5 σ, 2 σ)` de l'écart) pour éviter les traînées.
+- **Passe 2, statistiques** une image sur trois : vignette 64×36 lue par `readPixels` (9 Ko) → moyenne logarithmique de
+  la luminance, point noir (2ᵉ centile, borné), point blanc sur le canal le plus fort (99,5ᵉ centile), **carte locale**
+  (log-luminance lissée, envoyée comme texture R8 en racine cubique), gains **gray-world** (pixels peu saturés et ni
+  noirs ni brûlés seulement, chaque gain borné à 0,8–1,25, luminance conservée). Paramètres lissés dans le temps (pas de
+  pompage). Cette lecture attend la fin du travail GPU de l'image : elle donne le **coût réel par image**.
+- **Passe 3, tonalité** : gain global (vise 0,15 linéaire, `full^(0,35 + 0,65 k)`, plafond 1 + 13 k) × gain local
+  (`(moyenne / locale)^(0,35 k)`, borné 0,6–2,5) ; **épaule max-RGB** (identité jusqu'à 0,6 puis Reinhard étendu vers le
+  point blanc, appliquée au canal le plus fort : teinte et saturation conservées, une LED rouge reste rouge) ; pied de
+  courbe et chrominance atténuée dans les noirs profonds (pas de voile gris, pas de bruit coloré relevé).
+- **Garde-fou** : moyenne du coût réel sur 12 mesures > 30 ms → filtre 3×3 → 720p → arrêt avec message. Sans WebGL2 :
+  repli 2D (`ctx.filter` brightness / contrast, éclaircissement seul, sans débruitage). Contexte WebGL perdu : arrêt
+  avec message. Sur mobile, l'option limite l'envoi à 720p comme le flou.
+- **Cadrage** : la cause du champ « plus serré » était l'affichage, pas la caméra. `.tile video { object-fit: cover }`
+  rognait l'aperçu de soi : salle d'attente en 16:10 (−10 % de largeur pour une image 16:9), et en appel seul la vignette
+  prend la forme de la scène (1440×900 avec le chat ouvert : 1024×716, soit −20 % de largeur). L'aperçu de soi est
+  maintenant en `contain` (option « Champ complet », oui par défaut ; les petites vignettes et l'incrustation restent en
+  `cover`) et la salle d'attente en 16:9. Les vignettes des autres restent en `cover` (mosaïque sans bandes).
+- **Caméra** : `resizeMode: { ideal: 'none' }` (préférence, jamais exigée) pour obtenir un mode natif du capteur plutôt
+  qu'une image recadrée par le navigateur ; repli sur l'ancien jeu de contraintes si le navigateur refuse. **Zoom** :
+  Chrome ne l'expose qu'avec l'autorisation « déplacer la caméra » (PTZ) ; on ne la demande que sur « Régler le zoom »
+  (`zoom: true` à la réouverture). « Champ complet » ramène le zoom au minimum.
+- **Miroir** : CSS seulement (`scaleX(-1)` sur l'aperçu de soi), désactivable ; l'image envoyée n'est jamais inversée.
+- **Mesures** (`scripts/rehaussement-bench.mjs`, fausse caméra `scripts/fausse-camera-sombre.mjs`) : voir le manuel.
 
 ### Bande passante — estimations
 

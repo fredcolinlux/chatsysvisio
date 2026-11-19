@@ -16,6 +16,7 @@ function c920() {
   P.getCapabilities = function () { const c = gc.call(this); return this.kind === 'video' ? { ...c, ...caps } : c; };
   P.getSettings = function () { const s = gs.call(this); return this.kind === 'video' ? { ...s, ...cur } : s; };
   Object.defineProperty(P, 'label', { get() { return this.kind === 'video' ? 'HD Pro Webcam C920' : 'Micro'; } });
+  Object.defineProperty(MediaDeviceInfo.prototype, 'label', { get() { return this.kind === 'videoinput' ? 'HD Pro Webcam C920' : this.kind === 'audioinput' ? 'Micro (HD Pro Webcam C920)' : 'Haut-parleurs'; } });
 }
 for (const [name, opts] of [['rehaussement-panneau', { viewport: { width: 1440, height: 1480 } }], ['rehaussement-panneau-mobile', { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }]]) {
   const ctx = await b.newContext({ ...opts, locale: 'fr-FR', colorScheme: 'dark' }); const p = await ctx.newPage();

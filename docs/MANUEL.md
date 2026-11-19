@@ -1,6 +1,6 @@
 # ChatSysVisio — Manuel d'installation et d'utilisation
 
-*Version 1.10.0 · licence AGPL-3.0-or-later · fork de Camus*
+*Version 1.11.0 · licence AGPL-3.0-or-later · fork de Camus*
 
 ![Accueil](img/accueil-bureau.png)
 
@@ -19,7 +19,8 @@ Fonctions principales :
 - vidéo jusqu'en **1080p** (Auto / 360p / 720p / 1080p / Éco), HD envoyée seulement à qui l'affiche en grand ;
 - mosaïque paginée ou **mode orateur**, partage d'écran, **tableau blanc partagé** (croquis à plusieurs), plein écran,
   image dans l'image ;
-- **flou** et **arrière-plans** (détourage MediaPipe exécuté dans le navigateur) ;
+- **flou** et **arrière-plans** (détourage MediaPipe exécuté dans le navigateur), **rehaussement faible lumière**
+  (éclaircissement et débruitage de l'image sur la carte graphique) ;
 - **traitement du micro** : réduction de bruit (RNNoise), **autotune**, compresseur et dé-esseur, activables séparément ;
 - chat : réponses, Markdown, réactions, **fichiers et images**, « … écrit », **« Vu »** (accusés de lecture) ; main levée,
   réactions ;
@@ -373,6 +374,54 @@ Fermer le logiciel Logitech pendant l'appel : il peut garder la caméra ou lui i
 
 ![Réglages de la caméra sur mobile](img/camera-reglages-mobile.png)
 
+### Rehaussement faible lumière, champ complet, miroir et zoom (1.11)
+
+Dans **Réglages de la caméra** (salle d'attente ou menu « … »), tout s'applique à chaud et reste enregistré dans ce
+navigateur.
+
+![Réglages de la caméra 1.11](img/rehaussement-panneau.png)
+
+- **Rehaussement faible lumière** (désactivé par défaut) : dans une pièce sombre, éclaircit les ombres et le visage sans
+  brûler les LED ni l'écran, et lisse le grain (débruitage dans l'image et d'une image à l'autre, coupé là où ça bouge).
+  C'est l'équivalent, dans le navigateur, de ce que fait le logiciel Logitech (RightLight, réduction de bruit). Calculé
+  sur la **carte graphique** (WebGL2), avant l'envoi : les autres voient l'image rehaussée. Il se combine avec le flou ou
+  l'arrière-plan (le détourage se fait sur l'image déjà éclaircie, ce qui l'aide aussi dans le noir).
+  - **Intensité** : 60 % par défaut ; plus haut = plus clair et plus lisse, mais un peu plus « peint ».
+  - **Balance des blancs auto** (option) : atténue une dominante de couleur (visage trop orangé), limitée à ±25 % par
+    couleur ; les LED vives et l'écran ne comptent pas dans le calcul. Avec un éclairage volontairement coloré, laissez-la
+    éteinte.
+  - La ligne d'état indique le mode (carte graphique ou simplifié), la définition traitée, le **coût par image** et la
+    cadence. Si l'appareil est trop lent (plus de 30 ms par image), le filtre s'allège, puis passe en 720p, puis
+    s'arrête avec un message. Sans WebGL2 : mode simplifié (éclaircissement seul, sans débruitage).
+- **Champ complet** (oui par défaut) : ton aperçu montre **toute** l'image de la caméra. Avant la 1.11, l'aperçu était
+  rogné pour remplir la vignette (−10 % de largeur dans la salle d'attente, jusqu'à −20 % en appel avec le chat ouvert) :
+  c'est ce qui donnait un cadrage plus serré que Logi Capture. Désactivé : l'aperçu remplit la vignette, comme avant.
+- **Aperçu en miroir** (oui par défaut, caméra avant) : comme dans une glace et comme Logi Capture. Les autres te voient
+  toujours à l'endroit (un texte tenu devant la caméra est lisible pour eux).
+- **Zoom** : si la caméra le permet, un curseur *Zoom* et un bouton **Champ complet** (zoom minimal). Chrome ne donne le
+  zoom qu'avec l'autorisation « utiliser et déplacer vos caméras » : bouton **Régler le zoom**, qui la demande une fois.
+  Utile si Logi Tune / G HUB a laissé un zoom enregistré dans la caméra.
+
+![Avant / après : fausse caméra de test dans une pièce sombre](img/rehaussement-avant-apres.jpg)
+
+*Image de test (fausse caméra qui imite une pièce sombre éclairée par des LED rouges, vertes et bleues et un écran
+bleu), passée dans le vrai traitement, dans Chrome. Gauche : image brute ; droite : rehaussement à 60 %.*
+
+**Mesures** sur cette fausse caméra (1080p, 24 i/s, intensité 60 %) : luminance moyenne **19,7 → 48,9** (sur 255) ;
+zone grise fixe 23,5 → 70,8, bruit temporel 4,65 → 2,40, soit un **rapport signal/bruit de 5,1 → 29,5** (≈ 6 fois
+moins de grain à luminosité égale) ; aucun pixel brûlé ajouté. À 100 % : signal/bruit 5,1 → 70,5. Coût : la machine
+de mesure **n'a pas de carte graphique** (WebGL émulé par le processeur, SwiftShader) : 279 ms par image en 1080p,
+127 ms en 720p, 44 ms en 360p — c'est précisément le cas où le garde-fou allège puis coupe. Sur une vraie carte
+graphique, même intégrée, le travail (≈ 40 lectures de texture par pixel, 2 Mpixels) se compte en millisecondes ;
+la ligne d'état du panneau donne la valeur réelle de ton PC.
+
+**Ce que le navigateur ne peut pas rattraper** face au traitement matériel de Logitech : RightLight et le HDR agissent
+**dans la caméra**, sur l'image brute du capteur, avant la compression interne (MJPEG) et avec la maîtrise de
+l'exposition et du gain image par image ; le navigateur reçoit une image déjà quantifiée sur 8 bits et compressée. Dans
+les noirs profonds, il n'y a plus que quelques niveaux de gris : on peut les éclaircir et lisser le grain, pas
+inventer les détails perdus (le résultat peut paraître « peint », surtout à forte intensité). Le débruitage temporel
+laisse un léger flou sur les mouvements rapides. Une lampe face au visage reste, de loin, la meilleure correction.
+
 ### « Vu » dans le chat (1.7)
 
 Sous **vos propres messages** apparaît une petite mention bleue : **« Vu par Bruno »** si une personne l'a lu,
@@ -491,11 +540,11 @@ Un code de secours remplace une fois le code TOTP à la connexion.
 tar -xzf chatsysvisio-<version>.tar.gz && cd chatsysvisio-<version> && bash update.sh
 ```
 
-Ou avec l'archive de **mise à jour** (même code, sans les tests), par exemple pour passer de 1.6.0, 1.7.0, 1.8.0 ou 1.9.0 à 1.10.0 :
+Ou avec l'archive de **mise à jour** (même code, sans les tests), par exemple pour passer de 1.6.0 … 1.10.0 à 1.11.0 :
 
 ```bash
-sha256sum -c chatsysvisio-mise-a-jour-1.10.0-b6.tar.gz.sha256
-tar -xzf chatsysvisio-mise-a-jour-1.10.0-b6.tar.gz && cd chatsysvisio-maj && bash update.sh
+sha256sum -c chatsysvisio-mise-a-jour-1.11.0-b7.tar.gz.sha256
+tar -xzf chatsysvisio-mise-a-jour-1.11.0-b7.tar.gz && cd chatsysvisio-maj && bash update.sh
 ```
 
 Depuis la 1.9.0, l'archive contient déjà le modèle de l'isolateur, précompressé : le serveur n'a rien à télécharger de plus.
@@ -544,7 +593,8 @@ Code source : conformément à l'AGPL, `/source.tar.gz` sert le code exact de la
 | **ERR_EMPTY_RESPONSE** | la connexion arrive d'une IP non listée dans `ALLOW_FROM` (le serveur la coupe sans réponse) — ajouter l'IP de NPM ou vider `ALLOW_FROM` ; ou on a tapé `https://IP:8790` alors que le port local parle HTTP. |
 | **« Jeton CSRF invalide »** | page ouverte depuis longtemps, cookies bloqués ou adresse différente de `PUBLIC_URL` (Origin refusée) : recharger la page, utiliser exactement `PUBLIC_URL`, autoriser les cookies du site. |
 | Vidéo noire / « Websockets » | activer **Websockets Support** dans NPM ; ajouter les `proxy_read_timeout`. |
-| **Image bruitée ou pâteuse** comparée au logiciel de la webcam | menu « … » → **Réglages de la caméra** : mode *Faible lumière*, netteté un peu plus basse, débit HD *Élevé* ; éclairer le visage de face ; fermer Logi Tune / G HUB (leurs réglages RightLight / HDR ne s'appliquent pas au navigateur). La HD n'est envoyée qu'à qui t'affiche en grand ; « Qualité vidéo » indique si l'envoi est réduit (réseau ou encodeur). |
+| **Image bruitée ou pâteuse** comparée au logiciel de la webcam | menu « … » → **Réglages de la caméra** : **Rehaussement faible lumière** (1.11), mode *Faible lumière*, netteté un peu plus basse, débit HD *Élevé* ; éclairer le visage de face ; fermer Logi Tune / G HUB (leurs réglages RightLight / HDR ne s'appliquent pas au navigateur). La HD n'est envoyée qu'à qui t'affiche en grand ; « Qualité vidéo » indique si l'envoi est réduit (réseau ou encodeur). |
+| **Cadrage plus serré** que dans le logiciel de la webcam | **Réglages de la caméra** → *Champ complet* (activé par défaut depuis la 1.11) ; si la caméra garde un zoom : *Régler le zoom* puis *Champ complet*. |
 | Caméra refusée | HTTPS obligatoire ; autoriser la caméra dans le cadenas de la barre d'adresse. |
 | « Lien incomplet » | le lien a été coupé : recopier le lien complet avec `#k=…`. |
 | **Couleurs un peu différentes sous Firefox** | Firefox ignore l'espace colorimétrique des images VP8 à l'affichage : teintes légèrement décalées (jaune plus vert, contrastes accentués). Chrome, Edge et Safari sont fidèles. Contournement : utiliser Chrome / Edge, ou un autre navigateur côté émetteur. |

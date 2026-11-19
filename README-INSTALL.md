@@ -12,7 +12,7 @@ connexion HTTPS/WebSocket que Nginx Proxy Manager (NPM) relaie vers le CT. Pas d
 ## 2. Installation
 
 **Paquet autonome (recommandé, hors ligne)** : `chatsysvisio-<version>.tar.gz` contient Node.js 24 officiel (x64 + arm64,
-SHA256 vérifié), les dépendances, MediaPipe et la police : `tar -xzf chatsysvisio-1.10.0.tar.gz && cd chatsysvisio-1.10.0 && bash install.sh`.
+SHA256 vérifié), les dépendances, MediaPipe et la police : `tar -xzf chatsysvisio-1.11.0.tar.gz && cd chatsysvisio-1.11.0 && bash install.sh`.
 Aucun paquet n'est téléchargé (`USE_SYSTEM_NODE=1` pour utiliser `nodejs` de Debian à la place). Pas à pas : `docs/MANUEL.md`.
 
 Archives classiques (Node.js des dépôts Debian) :
@@ -140,7 +140,7 @@ Il n'y a rien à migrer : Camus ne conserve ni comptes ni historique.
 ## 4. Mise à jour
 
 ```bash
-tar -xzf chatsysvisio-mise-a-jour-1.10.0-b6.tar.gz   # nom exact de l'archive (ou chatsysvisio-mise-a-jour.tar.gz)
+tar -xzf chatsysvisio-mise-a-jour-1.11.0-b7.tar.gz   # nom exact de l'archive (ou chatsysvisio-mise-a-jour.tar.gz)
 cd chatsysvisio-maj
 bash update.sh
 ```
