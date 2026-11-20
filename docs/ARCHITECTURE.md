@@ -493,6 +493,34 @@ autres (et les leurs pour lui) → « pas de son » jusqu'à Ctrl+F5. Correctifs
   le serveur ne voit que `{id, enc}`. Affichage : tuile `wb` placée en grande vue avant les écrans partagés, `S.pinned`
   prioritaire. Aucun changement de CSP (pas de script en ligne, pas de CDN).
 
+## Durée de vie des salons (salons publics éphémères 1.12)
+
+- **Avant la 1.12**, un seul mécanisme : `Store.expire(ROOM_TTL_DAYS)` (balayage chaque minute dans `app.mjs`) supprime
+  tout salon (public, privé ou à mot de passe) dont `active` date de plus de 30 jours et où personne n'est connecté.
+  `active` est mis à jour à chaque arrivée, départ et message. L'état temps réel (`RoomState` du hub : participants,
+  tableau blanc, « Vu ») est déjà libéré dès que le salon se vide.
+- **1.12, `server/reaper.mjs`** (`RoomReaper`) : salon **public sans mot de passe** et vide → minuteur
+  `PUBLIC_ROOM_IDLE_TTL_MIN` (10 min). Le hub signale `onOccupied` (attache d'un participant : minuteur annulé,
+  `emptySince` effacé) et `onEmpty` (dernier départ ou fermeture par l'admin : `room.emptySince = maintenant`, persisté
+  dans `rooms.json`, minuteur armé). Création d'un salon public : compte à rebours tant que personne ne s'y connecte.
+- **Un minuteur par salon** (`Map roomId → minuteur`, `unref`, annulé à l'arrivée, à la suppression et à l'arrêt ;
+  délai borné à 2³¹−1 ms puis réarmé). Au déclenchement, tout est revérifié : même objet salon dans le store, toujours
+  éligible, personne de connecté, délai vraiment écoulé (sinon réarmement). Tout est synchrone sur le fil unique de
+  Node : une arrivée est soit avant (salon conservé), soit après (salon introuvable).
+- **Courses** : la poignée de main WebSocket acceptée relance le compte à rebours (`bump`) ; `Hub.attach` refuse
+  (code 4005) un salon qui n'est plus dans le store ; `Store.addMessage` / `setReactions` n'écrivent plus rien sur le
+  disque pour un salon supprimé et `saveFile` le refuse ; l'envoi de fichier et le résumé IA, asynchrones, revérifient
+  l'existence du salon après leur `await`.
+- **Destruction** : `Store.deleteRoom` (entrée de `rooms.json`, `messages/<id>.jsonl`, fichiers `files/<id>` +
+  `.json`, cache d'historique, compteur d'espace), puis `hub.closeRoom`, retrait de l'id dans toutes les sessions,
+  bannissements du salon retirés, événement « salon » dans le journal. Le slug (nom) redevient libre ; un nouveau salon
+  du même nom a un nouvel id aléatoire (72 bits), sans rapport avec l'ancien.
+- **Redémarrage** : `reaper.start()` parcourt les salons publics ; `emptySince` enregistré → délai restant (0 s'il a
+  expiré pendant l'arrêt) ; absent (salon occupé au moment de l'arrêt, ou installé avant 1.12) → délai complet à partir
+  du démarrage. À l'arrêt, le reaper est fermé avant le hub, pour que la déconnexion de tout le monde ne compte pas
+  comme un départ.
+- **Inchangé** : salons privés et salons à mot de passe (même publics) → `ROOM_TTL_DAYS`.
+
 ## Interface et système visuel (1.4, mise en page 1.5)
 
 Inspirée d'Emil Kowalski (emilkowal.ski, Sonner, Vaul) et des règles du skill « impeccable » (mode « operate » :

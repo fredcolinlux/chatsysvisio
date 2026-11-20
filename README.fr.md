@@ -33,6 +33,9 @@ Dérivé de [Camus](https://github.com/camuschat/camus) (AGPL-3.0, voir `NOTICE.
 - **Réglages de la caméra (1.10)** : luminosité, contraste, saturation, netteté, exposition et balance des blancs quand
   le navigateur les expose (Chrome / Edge sur ordinateur), mode faible lumière (15 i/s, exposition plus longue, bien
   moins de grain) et choix du débit HD ; 1080p à 4 Mbit/s en petit salon, image clé HD toutes les 10 s au lieu de 4.
+- **Salons publics éphémères (1.12)** : un salon public sans mot de passe est supprimé (historique, fichiers, nom
+  libéré) 10 minutes après le départ du dernier participant, délai réglable (`PUBLIC_ROOM_IDLE_TTL_MIN`) et conservé
+  au redémarrage ; les salons privés gardent l'expiration après 30 jours d'inactivité.
 - **Rehaussement faible lumière (1.11)**, désactivé par défaut : éclaircit les ombres et le visage sans brûler les LED
   et lisse le grain (débruitage bilatéral + temporel avec détection de mouvement, balance des blancs auto limitée en
   option, intensité réglable), sur la carte graphique (WebGL2), avant l'envoi, combiné au flou ; coût mesuré par image,
@@ -51,8 +54,8 @@ Dérivé de [Camus](https://github.com/camuschat/camus) (AGPL-3.0, voir `NOTICE.
 **Installation rapide (paquet autonome hors ligne, Debian 13)** :
 
 ```bash
-sha256sum -c chatsysvisio-1.11.0.tar.gz.sha256
-tar -xzf chatsysvisio-1.11.0.tar.gz && cd chatsysvisio-1.11.0 && bash install.sh
+sha256sum -c chatsysvisio-1.12.0.tar.gz.sha256
+tar -xzf chatsysvisio-1.12.0.tar.gz && cd chatsysvisio-1.12.0 && bash install.sh
 ```
 
 Manuel complet : **`docs/MANUEL.md`** · migration depuis l'ancien nom : **`docs/MIGRATION.md`** · détails : **`README-INSTALL.md`**. Choix techniques et limites : **`docs/ARCHITECTURE.md`**.

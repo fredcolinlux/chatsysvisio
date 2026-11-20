@@ -1,6 +1,6 @@
 # ChatSysVisio — Manuel d'installation et d'utilisation
 
-*Version 1.11.0 · licence AGPL-3.0-or-later · fork de Camus*
+*Version 1.12.0 · licence AGPL-3.0-or-later · fork de Camus*
 
 ![Accueil](img/accueil-bureau.png)
 
@@ -12,8 +12,8 @@ ouvrir. Aucune donnée n'est confiée à un tiers, aucun traqueur.
 
 Fonctions principales :
 
-- salons **publics** (listés sur la page « Salons publics ») ou **privés** (accessibles par lien), **mot de passe** facultatif,
-  limite de participants ;
+- salons **publics** (listés sur la page « Salons publics », **supprimés automatiquement 10 min après le départ du dernier
+  participant**) ou **privés** (accessibles par lien), **mot de passe** facultatif, limite de participants ;
 - **chiffrement de bout en bout** des salons privés : vidéo, son, écran, chat, réactions et fichiers sont illisibles pour
   le serveur ; la clé est dans le lien (`#k=…`), jamais envoyée au serveur ;
 - vidéo jusqu'en **1080p** (Auto / 360p / 720p / 1080p / Éco), HD envoyée seulement à qui l'affiche en grand ;
@@ -193,11 +193,34 @@ Pour atteindre le CT depuis Internet, passez par un VPN ou un bastion : n'expose
 
 - **Créer** : page d'accueil → nom du salon → options **Privé / Public**, **Mot de passe**, **Bout en bout**, limite de
   participants → **Créer**.
-- **Public** : listé sur « Salons publics », chiffré jusqu'au serveur (TLS) seulement, c'est affiché.
+- **Public** : listé sur « Salons publics », chiffré jusqu'au serveur (TLS) seulement, c'est affiché. Depuis la 1.12, un
+  salon public **sans mot de passe** est **supprimé automatiquement 10 minutes après le départ du dernier participant**
+  (voir ci-dessous).
 - **Privé** : seul le lien y mène. **Bout en bout** activé par défaut : partagez **le lien complet** (bouton
   « Copier le lien » ou QR code). Sans la partie `#k=…`, on voit « Lien incomplet ».
 - **Mot de passe** : demandé à l'entrée, en plus du lien.
 - Le **cadenas** dans l'en-tête affiche l'état du chiffrement et un **code de sécurité** à comparer à voix haute.
+
+#### Suppression automatique des salons publics vides (1.12)
+
+- Dès qu'un salon public n'a **plus personne de connecté**, un compte à rebours de **10 minutes** démarre
+  (`PUBLIC_ROOM_IDLE_TTL_MIN`, voir §10). Si quelqu'un revient avant la fin, le salon est conservé et le compte à
+  rebours repartira de zéro au prochain départ. Un salon public créé mais jamais rejoint suit la même règle.
+- À la fin du délai, le salon est **détruit** : retiré de « Salons publics », historique du chat effacé
+  (`messages/<id>.jsonl`), pièces jointes effacées (`files/`), entrée retirée de `rooms.json`, autorisations d'accès des
+  navigateurs et bannissements de ce salon oubliés. Le tableau blanc, les « Vu » et l'état de l'appel ne sont gardés
+  qu'en mémoire et disparaissent déjà dès que le salon se vide. Le **nom redevient libre** : on peut recréer un salon
+  du même nom, qui repart vide. L'événement est noté dans le **Journal** de l'administration (type « Salons »).
+- **Redémarrage** du service : le début du vide est enregistré ; un salon déjà vide garde son délai restant (supprimé dès
+  le démarrage s'il a expiré pendant l'arrêt) ; un salon qui était occupé au moment de l'arrêt a 10 minutes pour être
+  rejoint.
+- Affichage : sur « Salons publics », une carte vide indique « Vide · supprimé dans N min s'il reste vide » ; la salle
+  d'attente d'un salon public le rappelle (« Ce salon public sera supprimé 10 min après le départ du dernier
+  participant… ») ; l'administration affiche le temps restant dans « Tous les salons ».
+- **Non concernés** : les salons **privés** et les salons **protégés par mot de passe** (même publics) ; ils restent
+  supprimés après **30 jours sans activité** (`ROOM_TTL_DAYS`), comme avant.
+
+![Salons publics vides : délai avant suppression](img/salons-publics-expiration.png)
 
 ![Salle d'attente](img/lobby-bureau.png)
 
@@ -509,7 +532,8 @@ sur mobile pour préserver la batterie.
 ![Administration](img/admin-bureau.png)
 
 - **Vue d'ensemble** : débits, CPU, RAM, disque, salons et participants, version.
-- **Salons** : participants, **exclure** (avec bannissement temporaire), **fermer** ou **supprimer** un salon.
+- **Salons** : participants, **exclure** (avec bannissement temporaire), **fermer** ou **supprimer** un salon. Un salon
+  public vide affiche « vide · supprimé dans N min » (1.12) ; fermer un salon public lance ce compte à rebours.
 - **Réglages à chaud** : création anonyme et code de création, limite par salon, quotas, taille des fichiers,
   mode d'inscription (fermé, ouvert, invitation, validation), création réservée aux comptes, invités.
 - **Comptes** : valider, désactiver, supprimer, réinitialiser un mot de passe ; codes d'invitation.
@@ -540,11 +564,11 @@ Un code de secours remplace une fois le code TOTP à la connexion.
 tar -xzf chatsysvisio-<version>.tar.gz && cd chatsysvisio-<version> && bash update.sh
 ```
 
-Ou avec l'archive de **mise à jour** (même code, sans les tests), par exemple pour passer de 1.6.0 … 1.10.0 à 1.11.0 :
+Ou avec l'archive de **mise à jour** (même code, sans les tests), par exemple pour passer de 1.6.0 … 1.11.0 à 1.12.0 :
 
 ```bash
-sha256sum -c chatsysvisio-mise-a-jour-1.11.0-b7.tar.gz.sha256
-tar -xzf chatsysvisio-mise-a-jour-1.11.0-b7.tar.gz && cd chatsysvisio-maj && bash update.sh
+sha256sum -c chatsysvisio-mise-a-jour-1.12.0-b8.tar.gz.sha256
+tar -xzf chatsysvisio-mise-a-jour-1.12.0-b8.tar.gz && cd chatsysvisio-maj && bash update.sh
 ```
 
 Depuis la 1.9.0, l'archive contient déjà le modèle de l'isolateur, précompressé : le serveur n'a rien à télécharger de plus.
@@ -561,7 +585,10 @@ participant recharge la page avec **Ctrl+F5** (Cmd+Maj+R sur Mac ; fermer / rouv
 | Restaurer | `systemctl stop chatsysvisio && tar -C / -xzf /var/backups/chatsysvisio/<archive> && systemctl start chatsysvisio` |
 | Sauvegarde Proxmox | une sauvegarde *vzdump* du CT complète utilement les archives ci-dessus |
 
-Aucune vidéo ni aucun son n'est enregistré. Les salons inactifs sont supprimés après 30 jours.
+Aucune vidéo ni aucun son n'est enregistré. Les salons privés et ceux protégés par mot de passe sont supprimés après
+30 jours sans activité (`ROOM_TTL_DAYS`) ; les salons publics sans mot de passe 10 minutes après le départ du dernier
+participant (`PUBLIC_ROOM_IDLE_TTL_MIN`, ajouté au `.env` par `update.sh` en 1.12 ; `0` = jamais ; puis
+`systemctl restart chatsysvisio`).
 
 ## 11. Sécurité et note A+ WebGuardian
 

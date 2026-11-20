@@ -12,7 +12,7 @@ connexion HTTPS/WebSocket que Nginx Proxy Manager (NPM) relaie vers le CT. Pas d
 ## 2. Installation
 
 **Paquet autonome (recommandé, hors ligne)** : `chatsysvisio-<version>.tar.gz` contient Node.js 24 officiel (x64 + arm64,
-SHA256 vérifié), les dépendances, MediaPipe et la police : `tar -xzf chatsysvisio-1.11.0.tar.gz && cd chatsysvisio-1.11.0 && bash install.sh`.
+SHA256 vérifié), les dépendances, MediaPipe et la police : `tar -xzf chatsysvisio-1.12.0.tar.gz && cd chatsysvisio-1.12.0 && bash install.sh`.
 Aucun paquet n'est téléchargé (`USE_SYSTEM_NODE=1` pour utiliser `nodejs` de Debian à la place). Pas à pas : `docs/MANUEL.md`.
 
 Archives classiques (Node.js des dépôts Debian) :
@@ -140,7 +140,7 @@ Il n'y a rien à migrer : Camus ne conserve ni comptes ni historique.
 ## 4. Mise à jour
 
 ```bash
-tar -xzf chatsysvisio-mise-a-jour-1.11.0-b7.tar.gz   # nom exact de l'archive (ou chatsysvisio-mise-a-jour.tar.gz)
+tar -xzf chatsysvisio-mise-a-jour-1.12.0-b8.tar.gz   # nom exact de l'archive (ou chatsysvisio-mise-a-jour.tar.gz)
 cd chatsysvisio-maj
 bash update.sh
 ```
@@ -149,7 +149,7 @@ Version et build installés puis nouveaux sont affichés au début (`curl -s htt
 Sauvegarde complète dans `/var/backups/chatsysvisio/chatsysvisio-maj-DATE.tar.gz` (5 dernières gardées). L'ancien code est
 gardé dans `/opt/chatsysvisio.prev`. Si la nouvelle version ne démarre pas, l'ancienne est remise en place automatiquement.
 La configuration existante est conservée (seules les nouvelles clés sont ajoutées : en 1.2, `ADMIN_PATH`, `ADMIN_ALLOW_CIDR`,
-`ADMIN_ALLOW_HTTP`, `SIGNUP_MODE`, `ACCOUNTS_ONLY_CREATE`, `GUEST_JOIN`). S'il n'existe encore aucun administrateur, la mise à
+`ADMIN_ALLOW_HTTP`, `SIGNUP_MODE`, `ACCOUNTS_ONLY_CREATE`, `GUEST_JOIN` ; en 1.12, `PUBLIC_ROOM_IDLE_TTL_MIN`). S'il n'existe encore aucun administrateur, la mise à
 jour propose de le créer. La date et les versions de la mise à jour sont notées pour la page Système de l'administration. Le contrôle de sécurité (local +
 WebGuardian) est relancé à la fin ; `SECURITY_SCAN=0 bash update.sh` pour sauter la partie publique.
 
@@ -193,7 +193,8 @@ WebGuardian) est relancé à la fin ; `SECURITY_SCAN=0 bash update.sh` pour saut
 | Administrateur | `chatsysvisio-admin create-admin` · `list` · `reset-password` · `reset-totp` · `unlock` · `delete` (`--user NOM`, défaut `admin`) |
 | Désinstaller | `systemctl disable --now chatsysvisio chatsysvisio-backup.timer chatsysvisio-backup.path chatsysvisio-status.timer chatsysvisio-status.path && rm -rf /opt/chatsysvisio /etc/systemd/system/chatsysvisio* /etc/apt/apt.conf.d/99chatsysvisio /usr/local/sbin/chatsysvisio-*` (données : `/var/lib/chatsysvisio`) |
 
-Données conservées : salons (30 jours sans activité), historique du chat (300 derniers messages par salon), fichiers
+Données conservées : salons privés ou à mot de passe (30 jours sans activité), salons publics sans mot de passe (10 min
+après le départ du dernier participant), historique du chat (300 derniers messages par salon), fichiers
 partagés (supprimés avec le salon). Aucune vidéo ni aucun son n'est enregistré.
 
 ## 6. Options (`/etc/chatsysvisio/chatsysvisio.env`)
@@ -223,6 +224,8 @@ partagés (supprimés avec le salon). Aucune vidéo ni aucun son n'est enregistr
 | `ACCOUNTS_ONLY_CREATE` | `true` : seuls les comptes créent des salons |
 | `E2EE_LABEL` | préfixe des étiquettes E2EE (vide = celui de ChatSysVisio) ; posé par la migration depuis un ancien nom pour garder les salons chiffrés existants |
 | `GUEST_JOIN` | `false` : il faut un compte même pour rejoindre par lien |
+| `ROOM_TTL_DAYS` | salons privés ou à mot de passe supprimés après N jours sans activité (défaut 30) |
+| `PUBLIC_ROOM_IDLE_TTL_MIN` | 1.12 : salon **public** sans mot de passe supprimé N minutes après le départ du dernier participant (défaut 10 ; `0` = jamais ; décimales acceptées). Historique, fichiers et nom effacés |
 
 Les réglages modifiés dans l'administration (création anonyme et code, `CREATE_PER_10MIN`, limite par salon, quotas,
 `MAX_ROOMS`, mode d'inscription…) s'appliquent **à chaud** et sont enregistrés dans `/var/lib/chatsysvisio/settings.json`

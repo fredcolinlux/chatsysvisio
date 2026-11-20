@@ -22,6 +22,7 @@ pages, API, video and audio all go through WebSocket — no UDP, no TURN server.
 - **Autotune** (1.8): pulls singing to the nearest note (chromatic or a major / minor key), correction speed from natural to “robot”, live note display; computed on the device, 13 ms latency, sound untouched outside sung voice.
 - **Voice isolator** (1.9): keeps your voice and removes music, TV, noise and most of the voices behind you while you pause (DeepFilterNet3 model run on the device, WebAssembly, ≈ 11 MB downloaded once from your own server, only when switched on); adjustable strength, about 39 ms latency, includes noise suppression. It does not know *who* is speaking: a voice as loud as yours goes through while you talk.
 - **Camera settings** (1.10): brightness, contrast, saturation, sharpness, exposure and white balance when the browser exposes them (Chrome / Edge on desktop), a low-light mode (15 fps, longer exposure, far less grain) and an HD bitrate choice; 1080p sent at 4 Mbit/s in small rooms, HD key frame every 10 s instead of 4 (no more periodic blur).
+- **Ephemeral public rooms** (1.12): a public room without a password is deleted (chat history, files, name freed) 10 minutes after the last participant leaves; configurable (`PUBLIC_ROOM_IDLE_TTL_MIN`), survives restarts; private rooms still expire after 30 days of inactivity.
 - **Low-light enhancement** (1.11, off by default): brightens shadows and the face without blowing out LEDs, and smooths sensor grain (bilateral + motion-aware temporal denoising, optional limited gray-world white balance, strength slider) on the GPU (WebGL2) before encoding, combined with background blur; per-frame cost measured, automatic fallback (lighter filter → 720p → off). Self view now shows the camera's full field (it used to be cropped by `object-fit: cover`), mirrored by default (option), camera zoom exposed when supported.
 - **Shared whiteboard** (1.7): sketch together, shown to everyone like a screen share; pen with pressure, shapes, eraser, per-person undo, PNG export, owner lock; vector strokes, end-to-end encrypted in private rooms.
 - **Read receipts** (1.7): “Vu par …” under your own messages, sent only when the message was really on screen.
@@ -39,8 +40,8 @@ The release archive bundles the code, its dependencies, the Inter font, MediaPip
 **Node.js 24** build (linux-x64 and linux-arm64, SHA256-checked). No network access is needed during installation.
 
 ```bash
-sha256sum -c chatsysvisio-1.11.0.tar.gz.sha256
-tar -xzf chatsysvisio-1.11.0.tar.gz && cd chatsysvisio-1.11.0
+sha256sum -c chatsysvisio-1.12.0.tar.gz.sha256
+tar -xzf chatsysvisio-1.12.0.tar.gz && cd chatsysvisio-1.12.0
 sudo bash install.sh        # asks for the public URL and the reverse proxy IP
 ```
 
