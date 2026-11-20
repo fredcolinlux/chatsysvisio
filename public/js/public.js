@@ -10,7 +10,7 @@ async function load() {
     for (const r of list) {
       box.append(h('a', { class: 'card', href: `/r/${r.slug}` },
         h('div', { class: 'h' }, h('span', { class: r.count ? 'live' : 'dot' }), r.name, r.hasPassword ? icon('lock') : null),
-        h('div', { class: 'd' }, r.count ? `${r.count} / ${r.limit} en ligne` : `Vide · actif ${whenAgo(Date.now() - r.activeAgo * 60000)}`),
+        h('div', { class: 'd' }, r.count ? `${r.count} / ${r.limit} en ligne` : r.expiresIn != null ? `Vide · supprimé dans ${Math.max(1, r.expiresIn)} min s'il reste vide` : `Vide · actif ${whenAgo(Date.now() - r.activeAgo * 60000)}`),
         h('span', { class: 'btn sm' }, r.count >= r.limit ? 'Complet' : 'Rejoindre')));
     }
   } catch (e) { box.replaceChildren(h('div', { class: 'card' }, e.message)); }

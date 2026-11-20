@@ -619,7 +619,7 @@ async function boot() {
   try { info = await api(`/api/rooms/${encodeURIComponent(slug)}`); }
   catch (e) {
     view.replaceChildren(h('div', { class: 'center' }, h('span', { class: 'logo' }, icon('cam')), h('h2', {}, 'Salon introuvable'),
-      h('p', {}, e.status === 404 ? 'Ce salon n\'existe pas ou a expiré après une longue période d\'inactivité.' : e.message),
+      h('p', {}, e.status === 404 ? 'Ce salon n\'existe pas ou a expiré : un salon public est supprimé quand il reste vide, un salon privé après une longue période d\'inactivité.' : e.message),
       h('a', { class: 'btn pri', href: '/#nouveau' }, icon('plus'), 'Créer un salon')));
     return;
   }
@@ -1566,10 +1566,16 @@ function paintE2eeBadge() {
   b.title = l.long + ' — détails';
   b.onclick = openSecurity;
 }
+// 1.12 : salon public supprimé N minutes après le départ du dernier participant (PUBLIC_ROOM_IDLE_TTL_MIN)
+function idleTtlText(min) {
+  const d = min >= 1 ? `${Math.round(min)} min` : `${Math.max(1, Math.round(min * 60))} s`;
+  return `Ce salon public sera supprimé ${d} après le départ du dernier participant (messages et fichiers compris).`;
+}
 function e2eeHint() {
   if (S.e2) return h('div', { class: 'hint', id: 'e2eeHint' }, icon('lock'), 'Chiffré de bout en bout : vidéo, son, écran, messages, réactions et fichiers sont chiffrés dans ton navigateur. Ton serveur relaie sans pouvoir les lire.',
     ' ', h('a', { href: '#', onclick: e => { e.preventDefault(); openSecurity(); } }, 'Détails'));
-  if (S.info?.isPublic) return h('div', { class: 'hint', id: 'e2eeHint' }, icon('globe'), 'Salon public : pas de chiffrement de bout en bout. Flux chiffrés en TLS jusqu\'à ton serveur, qui peut techniquement les voir ; il les relaie sans enregistrer la vidéo ni le son.');
+  if (S.info?.isPublic) return h('div', { class: 'hint', id: 'e2eeHint' }, icon('globe'), h('span', {}, 'Salon public : pas de chiffrement de bout en bout. Flux chiffrés en TLS jusqu\'à ton serveur, qui peut techniquement les voir ; il les relaie sans enregistrer la vidéo ni le son.',
+    S.info.idleTtlMin ? h('span', { id: 'idleTtlHint' }, ' ', idleTtlText(S.info.idleTtlMin)) : null));
   return h('div', { class: 'hint', id: 'e2eeHint' }, icon('shield'), 'Ce salon n\'est pas chiffré de bout en bout (créé sans cette option ou avant la version 1.3) : chiffré en TLS jusqu\'à ton serveur seulement. Crée un nouveau salon privé pour le chiffrement de bout en bout.');
 }
 async function openSecurity() {

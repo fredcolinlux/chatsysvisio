@@ -30,8 +30,10 @@ class RoomState {
 }
 
 export class Hub {
-  constructor({ store, cfg, log = () => {}, isReserved = () => false, onEvent = () => {} }) {
+  constructor({ store, cfg, log = () => {}, isReserved = () => false, onEvent = () => {}, onOccupied = () => {}, onEmpty = () => {} }) {
     this.store = store; this.cfg = cfg; this.log = log; this.isReserved = isReserved; this.onEvent = onEvent;
+    // 1.12 : un salon reçoit quelqu'un / n'a plus personne (suppression automatique des salons publics vides)
+    this.onOccupied = onOccupied; this.onEmpty = onEmpty;
     this.rooms = new Map();
     this.bytesIn = 0; this.bytesOut = 0; // compteurs pour les statistiques d'administration
     this.timer = setInterval(() => this.tick(), 250); this.timer.unref?.();
@@ -45,6 +47,8 @@ export class Hub {
   isFull(room) { return this.count(room) >= this.limitOf(room); }
 
   attach(ws, { room, name, sessionId, ip = '', account = null }) {
+    // Salon supprimé pendant la poignée de main (suppression automatique ou administration) : on n'y attache personne.
+    if (this.store.getRoom(room.slug) !== room) { try { ws.close(4005, 'closed'); } catch {} return null; }
     let rs = this.rooms.get(room.id);
     if (!rs) { rs = new RoomState(room); this.rooms.set(room.id, rs); }
     if (rs.peers.size >= this.limitOf(room)) { ws.close(4003, 'full'); return null; }
@@ -61,6 +65,7 @@ export class Hub {
     };
     if (account) p.name = account.name; // un compte garde toujours son pseudo
     rs.peers.set(p.id, p);
+    this.onOccupied(room);
     this.store.touch(room);
     ws.on('message', (data, isBinary) => {
       this.bytesIn += data.length || 0;
@@ -94,7 +99,11 @@ export class Hub {
     // Ouvreur du tableau parti : on lui laisse un court délai pour revenir (coupure réseau), sinon le tableau se ferme.
     if (rs.board?.owner === p.id) { rs.board.owner = null; rs.board.orphanUntil = Date.now() + OWNER_GRACE_MS; this.broadcast(rs, { t: 'wb', op: 'meta', board: this.boardMeta(rs) }); }
     this.store.touch(rs.room);
-    if (rs.peers.size === 0) this.rooms.delete(rs.room.id); else { this.recomputeCodecs(rs); this.recomputeNeeds(rs); }
+    if (rs.peers.size === 0) {
+      // Le salon peut avoir été recréé entre-temps (même id impossible : 72 bits aléatoires) ; on ne retire que notre état.
+      if (this.rooms.get(rs.room.id) === rs) this.rooms.delete(rs.room.id);
+      this.onEmpty(rs.room);
+    } else { this.recomputeCodecs(rs); this.recomputeNeeds(rs); }
   }
 
   system(rs, text) {
@@ -365,6 +374,7 @@ export class Hub {
   }
 
   postAi(room, text) {
+    if (this.store.getRoom(room.slug) !== room) return null; // salon supprimé pendant que l'assistant résumait
     const rs = this.rooms.get(room.id);
     const msg = this.store.addMessage(room, { id: crypto.randomBytes(8).toString('hex'), ts: Date.now(), kind: 'ai', text, from: { name: 'Assistant local' }, reactions: {} });
     if (rs) this.broadcast(rs, { t: 'chat', msg });
@@ -486,7 +496,7 @@ export class Hub {
     const rs = this.rooms.get(roomId); if (!rs) return 0;
     const n = rs.peers.size;
     for (const p of [...rs.peers.values()]) { this.send(p, { t: 'closed' }); try { p.ws.close(4005, 'closed'); } catch {} rs.peers.delete(p.id); }
-    this.rooms.delete(roomId); return n;
+    this.rooms.delete(roomId); this.onEmpty(rs.room); return n;
   }
   kickAccount(accountId) { for (const rs of this.rooms.values()) for (const p of [...rs.peers.values()]) if (p.account === accountId) this.kick(rs.room.id, p.id, 'account'); }
 

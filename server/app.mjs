@@ -7,6 +7,7 @@ import zlib from 'node:zlib';
 import { WebSocketServer } from 'ws';
 import { Store } from './store.mjs';
 import { Hub } from './hub.mjs';
+import { RoomReaper } from './reaper.mjs';
 import { securityHeaders, hashPassword, verifyPasswordAsync, RateLimiter, clientIp, isHttps, sameOrigin, randomId, tokenEq } from './security.mjs';
 import { Accounts, Admins, validNickname } from './accounts.mjs';
 import { Settings } from './settings.mjs';
@@ -43,6 +44,17 @@ export function createApp(cfg) {
   const hub = new Hub({ store, cfg, log, isReserved: n => accounts.isReserved(n), onEvent: (t, m, d = {}) => events.add(t, m, { ...d, ip: maskIp(d.ip) }) });
   const stats = new Stats({ hub, cfg });
   const sessions = new Map();
+  // 1.12 : un salon public vide depuis PUBLIC_ROOM_IDLE_TTL_MIN minutes est supprimé (voir reaper.mjs).
+  const reaper = new RoomReaper({ store, count: r => hub.count(r), ttlMs: () => (cfg.publicRoomIdleTtlMin || 0) * 60e3, log,
+    onDestroy: room => {
+      hub.closeRoom(room.id); // personne normalement ; par sécurité
+      for (const ss of sessions.values()) ss.rooms.delete(room.id);
+      bans.removeRoom(room.id);
+      events.add('salon', `Salon public « ${room.name} » supprimé automatiquement (vide depuis ${cfg.publicRoomIdleTtlMin} min)`, { room: room.slug });
+    } });
+  hub.onOccupied = room => reaper.occupied(room);
+  hub.onEmpty = room => reaper.emptied(room);
+  reaper.start();
   const limits = {
     join: new RateLimiter({ capacity: 10, perSec: 10 / 60 }),        // 10 essais / min / IP
     joinRoom: new RateLimiter({ capacity: 30, perSec: 30 / 300 }),   // par salon : 30 / 5 min (anti force brute distribuée)
@@ -208,7 +220,8 @@ export function createApp(cfg) {
   function roomPublicInfo(room, s) {
     const authorized = !!s?.rooms.has(room.id);
     return { name: room.name, slug: room.slug, hasPassword: !!room.passwordHash, isPublic: room.isPublic, limit: hub.limitOf(room),
-      count: hub.count(room), authorized, ai: cfg.aiEnabled && !room.e2ee, e2ee: e2eeInfo(room, authorized) };
+      count: hub.count(room), authorized, ai: cfg.aiEnabled && !room.e2ee, e2ee: e2eeInfo(room, authorized),
+      ...(RoomReaper.eligible(room) && reaper.enabled() ? { idleTtlMin: cfg.publicRoomIdleTtlMin } : {}) };
   }
   // Paramètres publics du chiffrement de bout en bout. La valeur de contrôle (kcv) permet au navigateur de détecter un
   // lien ou un mot de passe faux ; avec un mot de passe, elle n'est donnée qu'après l'accès (sinon on pourrait
@@ -266,6 +279,7 @@ export function createApp(cfg) {
       try {
         const room = store.createRoom({ name, passwordHash: pw ? hashPassword(pw) : null, isPublic: !!b.isPublic, limit, e2ee });
         s.rooms.add(room.id);
+        reaper.emptied(room); // public : compte à rebours tant que personne ne s'y connecte
         log(`salon créé ${room.slug} (${room.isPublic ? 'public' : 'privé'}${room.passwordHash ? ', mot de passe' : ''}${room.e2ee ? ', chiffré de bout en bout' : ''})`);
         return json(res, 201, { slug: room.slug, url: `/r/${room.slug}` });
       } catch (e) {
@@ -274,7 +288,8 @@ export function createApp(cfg) {
       }
     }
     if (p === '/api/rooms/public' && m === 'GET') {
-      return json(res, 200, store.publicRooms().map(r => ({ ...roomPublicInfo(r, s), activeAgo: ago(r.active) })));
+      return json(res, 200, store.publicRooms().map(r => { const left = reaper.remaining(r);
+        return { ...roomPublicInfo(r, s), activeAgo: ago(r.active), ...(left != null ? { expiresIn: Math.ceil(left / 60000) } : {}) }; }));
     }
     if (p === '/api/rooms/status' && m === 'GET') {
       const slugs = String(url.searchParams.get('slugs') || '').split(',').slice(0, 30);
@@ -310,6 +325,7 @@ export function createApp(cfg) {
         const quota = cfg.roomQuotaMb * 1024 * 1024, used = store.roomUsage(room.id);
         if (used + (+req.headers['content-length'] || 0) > quota) return err(res, 507, `Espace du salon plein (${cfg.roomQuotaMb} Mo).`);
         const data = await readBody(req, max);
+        if (!store.live(room)) return err(res, 404, 'Ce salon n\'existe plus (supprimé après être resté vide).');
         if (store.roomUsage(room.id) + data.length > quota) return err(res, 507, `Espace du salon plein (${cfg.roomQuotaMb} Mo).`);
         if (!data.length) return err(res, 400, 'Fichier vide.');
         let name = ''; try { name = decodeURIComponent(String(req.headers['x-file-name'] || 'fichier')); } catch { name = 'fichier'; }
@@ -332,6 +348,7 @@ export function createApp(cfg) {
         try {
           const text = await summarize(cfg, msgs);
           const msg = hub.postAi(room, text);
+          if (!msg) return err(res, 404, 'Ce salon n\'existe plus.');
           return json(res, 200, { ok: true, id: msg.id });
         } catch (e) { log('olla', e.message); return err(res, 502, 'L\'assistant local ne répond pas.'); }
       }
@@ -383,7 +400,7 @@ export function createApp(cfg) {
     return err(res, 404, 'Introuvable');
   }
 
-  const admin = createAdmin({ cfg, hub, store, accounts, admins, settings, events, stats, sessions, bans, json, err, readJson, notFound, log, logoutAccount });
+  const admin = createAdmin({ cfg, hub, store, reaper, accounts, admins, settings, events, stats, sessions, bans, json, err, readJson, notFound, log, logoutAccount });
 
   function serveFile(req, res, id) {
     const s = getSession(req, res, false);
@@ -464,6 +481,7 @@ export function createApp(cfg) {
       if (!acc && !cfg.guestJoin) return deny(403, 'Forbidden');
       if (bans.isBanned(room.id, { ip, sessionId: s.id, account: acc?.id })) { blocked(ip, `WebSocket refusé (banni de « ${room.name} »)`); return deny(403, 'Forbidden'); }
       if (hub.sessionConnections(room, s.id) >= MAX_WS_PER_SESSION) return deny(429, 'Too Many Requests');
+      reaper.bump(room); // arrivée en cours : le compte à rebours d'un salon public vide repart de zéro
       wss.handleUpgrade(req, socket, head, ws => {
         ws.isAlive = true; ws.on('pong', () => { ws.isAlive = true; });
         hub.attach(ws, { room, name: acc ? acc.name : s.name, sessionId: s.id, ip, account: acc });
@@ -473,8 +491,8 @@ export function createApp(cfg) {
   const pinger = setInterval(() => { for (const ws of wss.clients) { if (!ws.isAlive) { ws.terminate(); continue; } ws.isAlive = false; try { ws.ping(); } catch {} } }, 20e3);
   pinger.unref?.();
 
-  server.on('close', () => { clearInterval(sweeper); clearInterval(pinger); hub.close(); stats.close(); admin.close(); });
-  return { server, cfg, store, hub, sessions, limits, accounts, admins, settings, events, bans, stats };
+  server.on('close', () => { reaper.close(); clearInterval(sweeper); clearInterval(pinger); hub.close(); stats.close(); admin.close(); });
+  return { server, cfg, store, hub, reaper, sessions, limits, accounts, admins, settings, events, bans, stats };
 }
 
 function isDirectLocal(req) {

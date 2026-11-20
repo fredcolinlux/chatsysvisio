@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const EVENT_TYPES = { connexion: 'Connexion', blocage: 'Blocage', refus: 'IP refusée', auth: 'Échec de connexion', admin: 'Action admin', compte: 'Compte' };
+export const EVENT_TYPES = { connexion: 'Connexion', blocage: 'Blocage', refus: 'IP refusée', auth: 'Échec de connexion', admin: 'Action admin', compte: 'Compte', salon: 'Salon' };
 const SECRET_KEYS = /pass|code|secret|token|csrf|cookie|hash|totp/i;
 
 export class EventLog {

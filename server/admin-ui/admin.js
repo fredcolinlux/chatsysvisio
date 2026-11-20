@@ -177,13 +177,14 @@ VIEWS.rooms = async () => {
       h('thead', {}, h('tr', {}, ...['Salon', 'Type', 'En ligne', 'Fichiers', 'Dernière activité', ''].map(x => h('th', {}, x)))),
       h('tbody', {}, ...r.stored.slice(0, 200).map(x => h('tr', {},
         h('td', {}, h('b', {}, x.name), ' ', h('span', { class: 'mono muted' }, x.slug)),
-        h('td', { 'data-l': 'Type' }, x.isPublic ? 'public' : 'privé', x.hasPassword ? ' · mot de passe' : '', x.e2ee ? ' · chiffré de bout en bout' : ''),
+        h('td', { 'data-l': 'Type' }, x.isPublic ? 'public' : 'privé', x.hasPassword ? ' · mot de passe' : '', x.e2ee ? ' · chiffré de bout en bout' : '',
+          x.expiresIn != null ? h('div', { class: 'muted', title: 'Salon public vide : supprimé automatiquement si personne ne revient' }, x.expiresIn < 60e3 ? 'vide · suppression imminente' : `vide · supprimé dans ${Math.ceil(x.expiresIn / 60e3)} min`) : null),
         h('td', { class: 'num', 'data-l': 'En ligne' }, String(x.people)), h('td', { class: 'num', 'data-l': 'Fichiers' }, `${n1.format(x.usageMb)} Mo`),
         h('td', { class: 'num', 'data-l': 'Activité' }, dt(x.active)),
         h('td', {}, h('div', { class: 'acts' }, h('button', { class: 'btn sm danger', onclick: () => closeRoom(x, true) }, 'Supprimer')))))))));
 };
 async function closeRoom(room, del) {
-  if (!(await confirmBox(del ? `Supprimer « ${room.name} » ?` : `Fermer « ${room.name} » ?`, del ? 'Tout le monde est déconnecté et le salon est effacé avec ses messages et fichiers. Irréversible.' : 'Tout le monde est déconnecté. Le salon reste disponible et on pourra le rejoindre à nouveau.', del ? 'Supprimer' : 'Fermer'))) return;
+  if (!(await confirmBox(del ? `Supprimer « ${room.name} » ?` : `Fermer « ${room.name} » ?`, del ? 'Tout le monde est déconnecté et le salon est effacé avec ses messages et fichiers. Irréversible.' : 'Tout le monde est déconnecté. Le salon reste disponible et on pourra le rejoindre à nouveau' + (room.isPublic ? ' (salon public : supprimé automatiquement s\'il reste vide).' : '.'), del ? 'Supprimer' : 'Fermer'))) return;
   try { const r = await call('rooms/close', { method: 'POST', body: { roomId: room.id, delete: del } }); toast(`${del ? 'Supprimé' : 'Fermé'} : ${r.disconnected} personne(s) déconnectée(s).`); render(); } catch (x) { toast(x.message, { error: true }); }
 }
 async function kick(room, p) {
@@ -266,8 +267,8 @@ VIEWS.accounts = async () => {
       h('td', {}, h('div', { class: 'acts' }, h('button', { class: 'btn sm', onclick: async () => { await call('invites/revoke', { method: 'POST', body: { id: i.id } }); render(); } }, 'Révoquer'))))))) : null);
 };
 
-const TYPES = [['', 'Tous'], ['connexion', 'Connexions'], ['blocage', 'Blocages'], ['refus', 'IP refusées'], ['auth', 'Échecs de connexion'], ['admin', 'Actions admin'], ['compte', 'Comptes']];
-const TCLS = { connexion: '', blocage: 'warn', refus: 'bad', auth: 'bad', admin: 'acc', compte: 'ok' };
+const TYPES = [['', 'Tous'], ['connexion', 'Connexions'], ['blocage', 'Blocages'], ['refus', 'IP refusées'], ['auth', 'Échecs de connexion'], ['admin', 'Actions admin'], ['compte', 'Comptes'], ['salon', 'Salons']];
+const TCLS = { connexion: '', blocage: 'warn', refus: 'bad', auth: 'bad', admin: 'acc', compte: 'ok', salon: '' };
 let evFilter = { type: '', q: '' };
 VIEWS.events = async (refresh) => {
   if (refresh && document.activeElement?.id === 'evq') return null;

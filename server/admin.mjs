@@ -44,7 +44,7 @@ export function ipAllowed(bl, ip) {
 const isLoopback = ra => /^(127\.|::1$|::ffff:127\.)/.test(ra || '');
 
 export function createAdmin(ctx) {
-  const { cfg, hub, store, accounts, admins, settings, events, stats, sessions, bans, json, err, readJson, notFound, log } = ctx;
+  const { cfg, hub, store, reaper, accounts, admins, settings, events, stats, sessions, bans, json, err, readJson, notFound, log } = ctx;
   const base = cfg.adminPath;
   const allow = buildBlockList(cfg.adminAllowCidr);
   const asess = new Map(), grace = new Map();
@@ -159,7 +159,7 @@ export function createAdmin(ctx) {
   }
   function storedRooms() {
     return [...store.rooms.values()].map(r => ({ id: r.id, slug: r.slug, name: r.name, isPublic: r.isPublic, hasPassword: !!r.passwordHash, e2ee: !!r.e2ee,
-      created: r.created, active: r.active, people: hub.count(r), usageMb: Math.round(store.roomUsage(r.id) / 1048576 * 10) / 10 })).sort((a, b) => b.active - a.active);
+      created: r.created, active: r.active, people: hub.count(r), expiresIn: reaper?.remaining(r) ?? null, usageMb: Math.round(store.roomUsage(r.id) / 1048576 * 10) / 10 })).sort((a, b) => b.active - a.active);
   }
 
   async function apiCall(req, res, sub, s, ip) {
@@ -267,6 +267,7 @@ export class Bans {
     return id;
   }
   remove(id) { this.items.delete(id); }
+  removeRoom(roomId) { for (const [k, b] of this.items) if (b.roomId === roomId) this.items.delete(k); }
   isBanned(roomId, { ip, sessionId, account }, now = Date.now()) {
     for (const [k, b] of this.items) {
       if (b.until < now) { this.items.delete(k); continue; }

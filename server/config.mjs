@@ -19,6 +19,8 @@ export function loadConfig(over = {}) {
     allowFrom: (env.ALLOW_FROM || '').split(',').map(s => s.trim()).filter(Boolean),
     maxParticipants: Math.min(25, Math.max(2, int(env.MAX_PARTICIPANTS, 25))),
     roomTtlDays: int(env.ROOM_TTL_DAYS, 30),
+    // 1.12 : salon PUBLIC supprimé après N minutes sans personne (0 = jamais ; décimales acceptées, ex. 0.1 = 6 s)
+    publicRoomIdleTtlMin: (v => Number.isFinite(v) && v >= 0 ? Math.min(v, 525600) : 10)(parseFloat(env.PUBLIC_ROOM_IDLE_TTL_MIN ?? '')),
     uploadMaxMb: int(env.UPLOAD_MAX_MB, 10),
     roomQuotaMb: Math.max(1, int(env.ROOM_QUOTA_MB, 200)),     // espace disque max des fichiers d'un salon
     maxRooms: Math.max(10, int(env.MAX_ROOMS, 5000)),          // nombre max de salons sur le serveur

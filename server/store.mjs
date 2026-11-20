@@ -58,11 +58,14 @@ export class Store {
     this.rooms.set(slug, room); this.saveNow();
     return room;
   }
+  // Salon toujours présent (pas supprimé entre-temps) : rien n'est écrit sur le disque pour un salon supprimé.
+  live(room) { return !!room && this.rooms.get(room.slug) === room; }
   touch(room) { room.active = Date.now(); this.saveSoon(); }
   publicRooms() { return [...this.rooms.values()].filter(r => r.isPublic).sort((a, b) => b.active - a.active); }
 
   deleteRoom(room) {
-    this.rooms.delete(room.slug); this.history.delete(room.id); this.saveNow();
+    if (this.rooms.get(room.slug) === room) this.rooms.delete(room.slug);
+    this.history.delete(room.id); this.saveNow();
     try { fs.rmSync(path.join(this.msgDir, `${room.id}.jsonl`), { force: true }); } catch {}
     for (const f of fs.readdirSync(this.fileDir)) {
       if (!f.endsWith('.json')) continue;
@@ -71,6 +74,7 @@ export class Store {
         if (m.roomId === room.id) this.deleteFile(m.id);
       } catch {}
     }
+    this.usage?.delete(room.id);
   }
 
   expire(ttlDays, isActive = () => false) {
@@ -100,6 +104,7 @@ export class Store {
   addMessage(room, msg) {
     const h = this.messages(room);
     h.push(msg); if (h.length > MAX_HISTORY) h.splice(0, h.length - MAX_HISTORY);
+    if (!this.live(room)) { this.history.delete(room.id); return msg; }
     fs.appendFileSync(path.join(this.msgDir, `${room.id}.jsonl`), JSON.stringify(msg) + '\n', { mode: 0o600 });
     return msg;
   }
@@ -107,12 +112,14 @@ export class Store {
     const m = this.messages(room).find(x => x.id === id);
     if (!m) return null;
     m.reactions = reactions; if (rx) m.rx = rx; if (erx) m.erx = erx;
+    if (!this.live(room)) return m;
     fs.appendFileSync(path.join(this.msgDir, `${room.id}.jsonl`), JSON.stringify({ op: 'react', id, reactions, rx, erx }) + '\n', { mode: 0o600 });
     return m;
   }
 
   // --- fichiers ---
   saveFile(room, { name, type, data }) {
+    if (!this.live(room)) throw Object.assign(new Error('Ce salon n\'existe plus.'), { status: 404 });
     const id = crypto.randomBytes(12).toString('base64url');
     const meta = { id, roomId: room.id, name: String(name).slice(0, 120), type, size: data.length, created: Date.now() };
     fs.writeFileSync(path.join(this.fileDir, id), data, { mode: 0o600 });

@@ -22,7 +22,7 @@ chipPrivate.addEventListener('click', () => {
   isPublic = !isPublic;
   chipPrivate.classList.toggle('on', !isPublic); chipPrivate.setAttribute('aria-pressed', String(!isPublic));
   chipPrivate.querySelector('span').textContent = isPublic ? 'Public' : 'Privé';
-  chipPrivate.title = isPublic ? 'Visible dans « Salons publics »' : 'Invisible : accessible seulement avec le lien';
+  chipPrivate.title = isPublic ? 'Visible dans « Salons publics » ; sans mot de passe, supprimé quand il reste vide après le départ du dernier participant' : 'Invisible : accessible seulement avec le lien';
   paintE2ee();
 });
 // Bout en bout : activé par défaut pour les salons privés ; un salon public n'est jamais chiffré de bout en bout.

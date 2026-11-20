@@ -127,6 +127,8 @@ ALLOW_FROM='$allow'
 DATA_DIR='$DATA_DIR'
 MAX_PARTICIPANTS='25'
 ROOM_TTL_DAYS='30'
+# Salon PUBLIC supprimé après N minutes sans personne (0 = jamais)
+PUBLIC_ROOM_IDLE_TTL_MIN='10'
 UPLOAD_MAX_MB='10'
 # Espace disque max des fichiers d'un salon (Mo) et nombre max de salons
 ROOM_QUOTA_MB='200'
@@ -194,6 +196,7 @@ migrate_env() {
   env_set_default SIGNUP_MODE "closed" "Comptes : closed, open, invite ou approval"
   env_set_default ACCOUNTS_ONLY_CREATE "false" "Création de salons réservée aux comptes"
   env_set_default GUEST_JOIN "true" "Invités sans compte autorisés à rejoindre par lien"
+  env_set_default PUBLIC_ROOM_IDLE_TTL_MIN "10" "Salon PUBLIC supprimé après N minutes sans personne (0 = jamais)"
   chmod 0600 "$ENV_FILE"
 }
 
