@@ -34,7 +34,12 @@ export function safeHost(req, cfg) {
   return HOST_RE.test(h) ? h : '';
 }
 
-export function csp(req, cfg, { wasm = false } = {}) {
+// Lecteur YouTube (1.13, page d'appel seulement) : un cadre youtube-nocookie.com piloté par postMessage, sans aucun
+// script tiers dans la page. Seuls ajouts : frame-src vers cette origine, délégation autoplay / plein écran à ce cadre,
+// et pas de Cross-Origin-Embedder-Policy (COEP require-corp bloque tout cadre tiers qui ne l'envoie pas lui-même ;
+// l'appli n'utilise ni SharedArrayBuffer ni isolation cross-origin). L'accueil et les autres pages ne changent pas.
+export const YT_ORIGIN = 'https://www.youtube-nocookie.com';
+export function csp(req, cfg, { wasm = false, youtube = false } = {}) {
   const https = isHttps(req, cfg);
   const host = safeHost(req, cfg);
   const ws = host ? ` ${https ? 'wss' : 'ws'}://${host}` : '';
@@ -48,6 +53,7 @@ export function csp(req, cfg, { wasm = false } = {}) {
     "font-src 'self'",
     "worker-src 'self' blob:",
     "manifest-src 'self'",
+    ...(youtube ? [`frame-src ${YT_ORIGIN}`] : []),
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -62,14 +68,19 @@ export const PERMISSIONS_POLICY = [
   'midi=()', 'magnetometer=()', 'gyroscope=()', 'accelerometer=()', 'browsing-topics=()',
 ].join(', ');
 
+export const permissionsPolicy = ({ youtube = false } = {}) => youtube
+  ? PERMISSIONS_POLICY.replace('autoplay=(self)', `autoplay=(self "${YT_ORIGIN}")`).replace('fullscreen=(self)', `fullscreen=(self "${YT_ORIGIN}")`)
+  : PERMISSIONS_POLICY;
+
 export function securityHeaders(req, res, cfg, opts = {}) {
+  opts = { ...opts, youtube: !!opts.youtube && cfg.youtubeEnabled !== false };
   res.setHeader('Content-Security-Policy', csp(req, cfg, opts));
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', PERMISSIONS_POLICY);
+  res.setHeader('Permissions-Policy', permissionsPolicy(opts));
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+  if (!opts.youtube) res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
   res.setHeader('X-DNS-Prefetch-Control', 'off');

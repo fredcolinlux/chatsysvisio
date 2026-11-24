@@ -14,6 +14,8 @@ import { prepare, fromPassword, finish, startSession, inviteUrl, needsPw } from 
 import { encryptFile, decryptFile, sniffImage, b64u, rand } from './e2ee.js';
 import { BoardView } from './board.js';
 import { validStroke } from './board-model.js';
+import { SharedVideo } from './youtube.js';
+import { parseYouTube, validState as ytValid, canOpen as ytCanOpen, loadVolume, saveVolume } from './youtube-model.js';
 
 const slug = decodeURIComponent(location.pathname.split('/')[2] || '').toLowerCase();
 initChrome({ activeSlug: slug });
@@ -30,7 +32,7 @@ const S = {
   bg: localStorage.getItem('cc-bg') || 'none', facing: 'user', fx: loadFx(),
   peers: new Map(), bySid: new Map(), me: null, speakerSid: 0, order: [], page: 0, pinned: null,
   tiles: new Map(), msgs: new Map(), replyTo: null, panel: !isMobile(), view: localStorage.getItem('cc-view') === 'speaker' ? 'speaker' : 'grid', tab: 'chat', unread: 0, joinedAt: 0, typing: new Map(),
-  seen: new Map(), wb: null, camfx: loadCam(),
+  seen: new Map(), wb: null, camfx: loadCam(), yt: null, ytVol: loadVolume(localStorage), ytEnabled: true,
 };
 window.__ccState = S; // inspection (tests)
 
@@ -719,6 +721,7 @@ function refreshButtons() {
   $('#dHand')?.classList.toggle('on', !!S.engine?.state.hand);
   $('#dScreen')?.classList.toggle('on', !!S.engine?.state.screen);
   $('#dChat')?.classList.toggle('on', S.panel && S.tab === 'chat');
+  const yb = $('#dYt'); if (yb) { yb.hidden = !S.ytEnabled; yb.classList.toggle('on', !!S.yt); const t = ytLabel(); yb.dataset.tip = t; yb.setAttribute('aria-label', t); }
   const bb = $('#dBoard'); if (bb) { bb.classList.toggle('on', !!S.wb); const t = !S.wb ? 'Tableau blanc' : isBoardOwner() ? 'Fermer le tableau blanc' : 'Afficher le tableau blanc'; bb.dataset.tip = t; bb.setAttribute('aria-label', t); }
 }
 
@@ -836,6 +839,7 @@ function dock() {
     db('dCam', 'cam', 'Caméra', () => setCam(!S.cam)),
     canScreen ? db('dScreen', 'screen', 'Partager l\'écran', toggleScreen, 'hide-m') : null,
     db('dBoard', 'board', 'Tableau blanc', toggleBoard, 'hide-m'),
+    db('dYt', 'yt', 'Partager une vidéo YouTube', toggleYt, 'hide-m'),
     db('dHand', 'hand', 'Lever la main (H)', toggleHand),
     db('dReact', 'smile', 'Réagir', e => emojiPopover(e.currentTarget, em => sendFlash(em))),
     h('span', { class: 'sep hide-m' }),
@@ -872,6 +876,7 @@ function moreMenu(anchor) {
     it('users', 'Participants', () => togglePanel('people', true)),
     isMobile() && canScreen ? it('screen', 'Partager l\'écran', toggleScreen) : null,
     isMobile() ? it('board', !S.wb ? 'Tableau blanc' : isBoardOwner() ? 'Fermer le tableau blanc' : 'Afficher le tableau blanc', toggleBoard) : null,
+    isMobile() && S.ytEnabled ? it('yt', ytLabel(), toggleYt) : null,
     isMobile() ? it('flip', 'Changer de caméra', flipCamera) : null,
     document.pictureInPictureEnabled ? it('pip', 'Image dans l\'image', pip) : null,
     document.fullscreenEnabled ? it('full', document.fullscreenElement ? 'Quitter le plein écran' : 'Plein écran', fullscreen) : null,
@@ -1301,6 +1306,122 @@ function updateBoardTile() {
   if (S.wb.view) { S.wb.view.enabled = !small; S.wb.view.paint(); }
 }
 
+// ---------------- Vidéo YouTube partagée (1.13) ----------------
+// Partagée comme un écran : une seule personne à la fois choisit la vidéo et la pilote (lecture, pause, position,
+// vitesse, changement, arrêt) ; les autres regardent et règlent leur propre volume (jamais synchronisé, retenu ici).
+// Le cadre <iframe> vit dans une couche fixe de la scène et suit la tuile : il n'est jamais déplacé dans le DOM
+// (déplacer un cadre le recharge), donc la lecture continue quand la mise en page change.
+const isYtOwner = () => !!S.yt && S.yt.share?.owner === S.me?.id;
+function ytLabel() { return !S.yt ? 'Partager une vidéo YouTube' : isYtOwner() ? 'Vidéo YouTube : changer ou arrêter' : 'Afficher la vidéo YouTube'; }
+let ytOut = Promise.resolve(), ytIn = Promise.resolve();
+function ytSend(op, st) {
+  if (op === 'state') window.__ccYtSent = (window.__ccYtSent || 0) + 1; // compteur (tests : aucun écho des spectateurs)
+  const e2 = S.e2?.keys;
+  if (!e2) { S.engine?.send({ t: 'yt', op, ...(st ? { s: st } : {}) }); return; }
+  ytOut = ytOut.then(async () => { const enc = st ? await e2.seal(st, 'yt') : undefined; S.engine?.send({ t: 'yt', op, ...(enc ? { enc } : {}) }); })
+    .catch(e => stats.errors.push('yt ' + e.message));
+}
+async function openYtState(m) {
+  if (m.s) return ytValid(m.s) ? m.s : null;
+  if (!S.e2?.keys || typeof m.enc !== 'string') return null;
+  // salon chiffré : le serveur ne voit pas l'identifiant ; chaque navigateur le valide après déchiffrement
+  try { const d = await S.e2.keys.open(m.enc, 'yt'); return ytValid(d) ? d : null; } catch { return null; }
+}
+function closeYtLocal() {
+  S.yt?.view?.destroy(); cancelAnimationFrame(S.yt?.raf || 0);
+  const t = S.tiles.get('yt'); t?.el.remove(); S.tiles.delete('yt');
+  if (S.pinned === 'yt') S.pinned = null; S.yt = null;
+}
+function onYtMsg(m) {
+  if (m.op === 'close') { const was = !!S.yt; closeYtLocal(); if (was) { layout(); refreshButtons(); } return; }
+  if (m.op !== 'open' && m.op !== 'state') return;
+  const recvAt = performance.now() - Math.min(Math.max(+m.age || 0, 0), 6 * 3600e3);
+  ytIn = ytIn.then(async () => {
+    const st = await openYtState(m); if (!st) { stats.errors.push('yt état invalide'); return; }
+    const share = m.share || S.yt?.share;
+    if (!share) return;
+    if (!S.yt || S.yt.share.owner !== share.owner) {
+      closeYtLocal();
+      S.yt = { share };
+      S.yt.view = new SharedVideo(ytCtx(), st, { recvAt });
+      S.yt.view.shield.addEventListener('click', () => { if (S.yt?.view.el.classList.contains('small')) { S.pinned = 'yt'; layout(); } });
+      if (m.op === 'open' && share.owner !== S.me?.id) S.pinned = null;
+      layout(); refreshButtons(); ytLoop();
+      return;
+    }
+    S.yt.share = share;
+    if (m.op === 'open' && isYtOwner()) { if (st.id !== S.yt.view.target.id) { S.yt.view.make(st.id, st.pos); S.yt.view.target = { ...st }; S.yt.view.recvAt = recvAt; S.yt.view.lastSent = null; S.yt.view.renderBar(); } return; }
+    S.yt.view.apply(st, recvAt); updateYtTile();
+  }).catch(e => stats.errors.push('yt ' + e.message));
+}
+function ytCtx() {
+  return {
+    isOwner: isYtOwner, ownerName: () => S.yt?.share?.ownerName || '?',
+    volume: () => S.ytVol, setVolume: v => { S.ytVol = saveVolume(localStorage, v); },
+    onState: st => ytSend('state', st),
+    onChange: () => openYtDialog(),
+    onClose: () => ytSend('close'),
+    onError: msg => { if (isYtOwner()) toast(msg, { error: true, ms: 8000 }); },
+  };
+}
+function ytTile() {
+  const slot = h('div', { class: 'ytslot' });
+  const lab = h('div', { class: 'lab' });
+  const el = h('div', { class: 'tile yt', dataset: { key: 'yt' } }, slot, lab);
+  el.addEventListener('click', () => { if (el.classList.contains('small')) { S.pinned = 'yt'; layout(); } });
+  const t = { key: 'yt', el, slot, lab, kind: 'yt', peer: null, isMe: false };
+  S.tiles.set('yt', t); updateYtTile(); return t;
+}
+function updateYtTile() {
+  const t = S.tiles.get('yt'); if (!t || !S.yt) return;
+  t.lab.replaceChildren(icon('yt'), isYtOwner() ? 'Ta vidéo YouTube' : `Vidéo de ${S.yt.share?.ownerName || '?'}`);
+}
+// Le cadre suit la case de la tuile (grande vue ou vignette), dans la couche de la scène (plein écran compris).
+function placeYt() {
+  const v = S.yt?.view, t = S.tiles.get('yt'), stage = $('#stage'); if (!v || !stage) return;
+  if (v.el.parentNode !== stage) stage.append(v.el);
+  if (!t || !t.el.isConnected) { v.el.hidden = true; return; }
+  const a = stage.getBoundingClientRect(), b = t.el.getBoundingClientRect();
+  const key = [b.left - a.left, b.top - a.top, b.width, b.height].map(Math.round).join(',');
+  const small = t.el.classList.contains('small');
+  v.el.hidden = false; v.el.classList.toggle('small', small);
+  if (v.key === key) return; v.key = key;
+  const [x, y, w, hh] = key.split(',');
+  Object.assign(v.el.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: hh + 'px' });
+}
+function ytLoop() { cancelAnimationFrame(S.yt?.raf || 0); const f = () => { if (!S.yt) return; placeYt(); S.yt.raf = requestAnimationFrame(f); }; if (S.yt) S.yt.raf = requestAnimationFrame(f); }
+function toggleYt() {
+  if (!S.yt) return openYtDialog();
+  const spotted = !S.pinned || S.pinned === 'yt';
+  if (!spotted) { S.pinned = null; layout(); return; }
+  if (isYtOwner()) return openYtDialog();
+  toast(`${S.yt.share?.ownerName || 'Quelqu\'un'} partage déjà une vidéo YouTube. Tu pourras partager la tienne quand il aura arrêté.`);
+}
+function openYtDialog() {
+  const chk = ytCanOpen(S.yt?.share, S.me?.id);
+  if (!chk.ok) return toast(chk.message, { error: true });
+  const change = !!chk.change;
+  const input = h('input', { type: 'url', id: 'ytUrl', inputmode: 'url', autocomplete: 'off', spellcheck: 'false', placeholder: 'https://www.youtube.com/watch?v=…', 'aria-label': 'Lien de la vidéo YouTube' });
+  const err = h('div', { class: 'formerr', id: 'ytErr', role: 'alert', hidden: true });
+  const go = () => {
+    const r = parseYouTube(input.value);
+    if (!r) { err.textContent = 'Ce lien n\'est pas une vidéo YouTube reconnue (youtube.com/watch, youtu.be, shorts, live ou embed).'; err.hidden = false; input.focus(); return; }
+    ytSend('open', { id: r.id, pos: r.t, play: true, rate: 1, n: 0 });
+    bg.querySelector('h3 .iconbtn').click();
+  };
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+  input.addEventListener('input', () => { err.hidden = true; });
+  const bg = modal(change ? 'Changer de vidéo YouTube' : 'Partager une vidéo YouTube',
+    h('p', { class: 'sub' }, change ? 'Colle le lien de la nouvelle vidéo : elle remplace l\'actuelle chez tout le monde.' : 'Colle un lien YouTube : la vidéo s\'affiche chez tout le monde et tu pilotes la lecture. Chacun règle son propre volume.'),
+    h('div', { class: 'field' }, h('label', { for: 'ytUrl' }, 'Lien de la vidéo'), h('div', { class: 'inp' }, icon('link'), input)), err,
+    h('p', { class: 'ythint' }, S.e2 ? 'Salon chiffré : le lien et la position de lecture sont chiffrés de bout en bout. Le lecteur est celui de YouTube (youtube-nocookie.com) : YouTube voit qui regarde.' : 'Le lecteur est celui de YouTube (youtube-nocookie.com) : YouTube voit qui regarde.'),
+    h('div', { class: 'crow end' },
+      change ? h('button', { class: 'btn danger', onclick: () => { ytSend('close'); bg.querySelector('h3 .iconbtn').click(); } }, 'Arrêter le partage') : null,
+      h('button', { class: 'btn', onclick: () => bg.querySelector('h3 .iconbtn').click() }, 'Annuler'),
+      h('button', { class: 'btn pri', id: 'ytGo', onclick: go }, icon('yt'), change ? 'Changer' : 'Partager')));
+  setTimeout(() => input.focus(), 30);
+}
+
 // ---------------- Tuiles ----------------
 function makeTile(key, peer, kind) {
   const isMe = peer.id === S.me?.id;
@@ -1316,6 +1437,7 @@ function makeTile(key, peer, kind) {
 function updateTile(t) {
   if (!t) return;
   if (t.kind === 'board') return updateBoardTile();
+  if (t.kind === 'yt') return updateYtTile();
   const p = t.peer, live = performance.now() - t.lastFrame < 2500;
   if (t.isMe && t.kind === 'cam') { t.ph.hidden = !!(S.cam && S.stream?.getVideoTracks().length); }
   else t.ph.hidden = t.kind === 'screen' || (p.state.cam && live);
@@ -1335,16 +1457,17 @@ function layout() {
   const want = new Set();
   for (const p of S.peers.values()) { want.add('p:' + p.id); if (p.state.screen && p.id !== S.me.id) want.add('s:' + p.id); }
   if (S.wb) want.add('wb');
+  if (S.yt) want.add('yt');
   for (const [k, t] of S.tiles) if (!want.has(k)) { t.el.remove(); S.tiles.delete(k); }
-  for (const k of want) if (!S.tiles.has(k)) { if (k === 'wb') { boardTile(); continue; } const p = S.peers.get(k.slice(2)); makeTile(k, p, k[0] === 's' ? 'screen' : 'cam'); }
+  for (const k of want) if (!S.tiles.has(k)) { if (k === 'wb') { boardTile(); continue; } if (k === 'yt') { ytTile(); continue; } const p = S.peers.get(k.slice(2)); makeTile(k, p, k[0] === 's' ? 'screen' : 'cam'); }
   // ordre stable des personnes distantes ; les orateurs récents remontent en première page
   const remote = [...S.peers.values()].filter(p => p.id !== S.me.id);
   S.order = S.order.filter(id => S.peers.has(id) && id !== S.me.id);
   for (const p of remote) if (!S.order.includes(p.id)) S.order.push(p.id);
   const me = S.tiles.get('p:' + S.me.id);
   const screens = [...S.tiles.values()].filter(t => t.kind === 'screen');
-  const board = S.tiles.get('wb');
-  let spotKey = S.pinned && S.tiles.has(S.pinned) ? S.pinned : board ? 'wb' : screens[0]?.key || null;
+  const board = S.tiles.get('wb'), ytt = S.tiles.get('yt');
+  let spotKey = S.pinned && S.tiles.has(S.pinned) ? S.pinned : ytt ? 'yt' : board ? 'wb' : screens[0]?.key || null;
   // Mode « orateur » : la personne qui parle (ou la première) en grand, les autres en bande dessous
   if (!spotKey && S.view === 'speaker' && remote.length) {
     const sp = S.bySid.get(S.speakerSid);
@@ -1369,10 +1492,10 @@ function layout() {
     const spot = S.tiles.get(spotKey);
     grid.className = 'grid spot'; $('#waitHint')?.remove();
     const strip = h('div', { class: 'strip' });
-    const others = [board, me, ...S.order.map(id => S.tiles.get('p:' + id))].filter(t => t && t !== spot);
-    others.slice(0, 12).forEach(t => { t.el.classList.add('small'); strip.append(t.el); if (t.kind !== 'board') sub(t, L_LO); });
+    const others = [ytt, board, me, ...S.order.map(id => S.tiles.get('p:' + id))].filter(t => t && t !== spot);
+    others.slice(0, 12).forEach(t => { t.el.classList.add('small'); strip.append(t.el); if (t.kind !== 'board' && t.kind !== 'yt') sub(t, L_LO); });
     grid.append(spot.el, strip); spot.el.classList.remove('small');
-    if (spot.kind === 'screen') sub(spot, L_SCREEN); else if (spot.kind !== 'board') big(spot, true);
+    if (spot.kind === 'screen') sub(spot, L_SCREEN); else if (spot.kind !== 'board' && spot.kind !== 'yt') big(spot, true);
     visible = [spot, ...others];
   } else if (remote.length === 0) {
     grid.append(me.el); grid.style.gridTemplateColumns = '1fr'; visible = [me];
@@ -1401,6 +1524,7 @@ function layout() {
   }
   for (const t of S.tiles.values()) updateTile(t);
   S.engine?.subscribe(subs);
+  placeYt();
 }
 
 // Remonte l'orateur actif en première page s'il n'y est pas.
@@ -1418,7 +1542,7 @@ const UI = {
         S.me = { ...m.you }; S.peers.clear(); S.bySid.clear();
         for (const p of [m.you, ...m.peers]) { S.peers.set(p.id, { ...p }); S.bySid.set(p.sid, S.peers.get(p.id)); }
         S.me = S.peers.get(m.you.id); S.speakerSid = m.speaker; S.info.limit = m.room.limit; S.info.ai = m.ai;
-        closeBoardLocal(); resetSeen();
+        closeBoardLocal(); closeYtLocal(); resetSeen(); S.ytEnabled = m.yt !== false;
         for (const t of S.tiles.values()) t.el.remove(); S.tiles.clear();
         const box = $('#msgs'); box.replaceChildren(); S.msgs.clear();
         if (!m.history.length) box.append(h('div', { class: 'sysmsg' }, 'Début de la discussion. Les messages restent dans le salon pour les prochaines visites.'));
@@ -1452,6 +1576,7 @@ const UI = {
         refreshSeen(); break;
       }
       case 'wb': onBoardMsg(m); break;
+      case 'yt': onYtMsg(m); break;
       case 'hand': toast([icon('hand'), `${m.name} lève la main`]); break;
       case 'chat': if (m.msg.enc) { const x = m.msg; queueMsg(async () => addMsg(await openMsg(x))); } else addMsg(m.msg); break;
       case 'msgreact': {
@@ -1543,6 +1668,7 @@ function leave() {
   endView('Tu as quitté le salon', `À bientôt dans « ${S.info.name} ».`);
 }
 function endView(title, text) {
+  closeYtLocal();
   S.left = true; S.engine?.leave();
   $('#inviteBtn').hidden = $('#peopleBtn').hidden = $('#panelBtn').hidden = $('#timer').hidden = true; $('#qualityBadge').hidden = true;
   view.className = 'callwrap';

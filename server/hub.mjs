@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import { T_VIDEO, T_AUDIO, LAYERS, HEADER, setSid, peekType, peekLayer, peekKey, peekLevel, PROTO } from '../public/js/protocol.js';
 import { degradeLayer, HEIGHTS } from '../public/js/quality.js';
 import { validStroke, cleanStroke, LIMITS as WB, ID_RE as WB_ID } from '../public/js/board-model.js';
+import { validState as ytValid, cleanState as ytClean, LIMITS as YT } from '../public/js/youtube-model.js';
 
 export const VIDEO_HIGH_WATER = 768 * 1024;  // octets en attente sur la socket d'un destinataire
 export const AUDIO_HIGH_WATER = 1536 * 1024;
@@ -25,7 +26,7 @@ const SEEN_MSGS = 400, SEEN_PER_MSG = 30;
 const OWNER_GRACE_MS = 20000; // tableau blanc : délai pour que son ouvreur revienne après une coupure
 
 class RoomState {
-  constructor(room) { this.room = room; this.peers = new Map(); this.nextSid = 1; this.speaker = 0; this.speakerAt = 0; this.top = new Set(); this.seen = new Map(); this.board = null; }
+  constructor(room) { this.room = room; this.peers = new Map(); this.nextSid = 1; this.speaker = 0; this.speakerAt = 0; this.top = new Set(); this.seen = new Map(); this.board = null; this.yt = null; }
   others(p) { return [...this.peers.values()].filter(x => x !== p); }
 }
 
@@ -98,6 +99,8 @@ export class Hub {
     for (const o of rs.peers.values()) { o.subs.forEach(k => { if (k.startsWith(p.sid + ':')) o.subs.delete(k); }); this.recomputeEff(o); }
     // Ouvreur du tableau parti : on lui laisse un court délai pour revenir (coupure réseau), sinon le tableau se ferme.
     if (rs.board?.owner === p.id) { rs.board.owner = null; rs.board.orphanUntil = Date.now() + OWNER_GRACE_MS; this.broadcast(rs, { t: 'wb', op: 'meta', board: this.boardMeta(rs) }); }
+    // Vidéo YouTube partagée : le partage s'arrête dès que la personne qui partage quitte le salon.
+    if (rs.yt?.owner === p.id) { rs.yt = null; this.broadcast(rs, { t: 'yt', op: 'close' }); if (p.hello) this.system(rs, `Partage YouTube de ${p.name} arrêté (parti du salon)`); }
     this.store.touch(rs.room);
     if (rs.peers.size === 0) {
       // Le salon peut avoir été recréé entre-temps (même id impossible : 72 bits aléatoires) ; on ne retire que notre état.
@@ -145,7 +148,7 @@ export class Hub {
         this.send(p, { t: 'welcome', you: this.peerInfo(p), room: { name: rs.room.name, slug: rs.room.slug, isPublic: rs.room.isPublic, hasPassword: !!rs.room.passwordHash, limit: this.limitOf(rs.room), e2ee: rs.room.e2ee ? rs.room.e2ee.mode : null },
           peers: rs.others(p).filter(o => o.hello).map(o => this.peerInfo(o)), history: this.store.messages(rs.room).slice(-150).map(x => x.ark && x.ark === p.rk ? { ...publicMsg(x), own: true } : publicMsg(x)),
           bitrates: { hi: this.cfg.videoHiKbps, lo: this.cfg.videoLoKbps, screen: this.cfg.screenKbps, hd720: this.cfg.video720Kbps, hd1080: this.cfg.video1080Kbps, hd720max: Math.max(this.cfg.video720Kbps, this.cfg.video720MaxKbps ?? 0), hd1080max: Math.max(this.cfg.video1080Kbps, this.cfg.video1080MaxKbps ?? 0), screenHd: this.cfg.screenHdKbps },
-          maxHeight: this.cfg.videoMaxHeight, ai: this.cfg.aiEnabled && !rs.room.e2ee, speaker: rs.speaker,
+          maxHeight: this.cfg.videoMaxHeight, ai: this.cfg.aiEnabled && !rs.room.e2ee, yt: this.cfg.youtubeEnabled !== false, speaker: rs.speaker,
           server: { version: this.cfg.version, build: this.cfg.build, proto: PROTO } });
         this.sendOwnSeen(p);
         // Tableau blanc en cours : l'ouvreur qui revient le reprend ; tout arrivant reçoit l'état complet (rejoué).
@@ -153,6 +156,8 @@ export class Hub {
           if (!rs.board.owner && rs.board.ownerRk === p.rk) { rs.board.owner = p.id; rs.board.orphanUntil = 0; this.broadcast(rs, { t: 'wb', op: 'meta', board: this.boardMeta(rs) }, p); }
           this.send(p, { t: 'wb', op: 'state', board: this.boardMeta(rs), items: rs.board.items.map(it => it.pub) });
         }
+        // Vidéo partagée en cours : état rejoué (identifiant, position, lecture/pause, vitesse) et son âge côté serveur.
+        if (rs.yt) this.send(p, this.ytMsg(rs, 'state'));
         this.broadcast(rs, { t: 'join', peer: this.peerInfo(p) }, p);
         this.system(rs, `${p.name} a rejoint le salon`);
         this.onEvent('connexion', `${p.name} a rejoint « ${rs.room.name} »`, { room: rs.room.slug, ip: p.ip, account: p.account ? p.name : undefined });
@@ -180,6 +185,7 @@ export class Hub {
       case 'chat': return this.onChat(p, m);
       case 'seen': return this.onSeen(p, m);
       case 'wb': return this.onBoard(p, m);
+      case 'yt': return this.onYouTube(p, m);
       case 'msgreact': {
         if (rs.room.e2ee) return this.onEncReact(p, m);
         if (!EMOJIS.has(m.emoji)) return;
@@ -368,6 +374,51 @@ export class Hub {
         const del = [];
         b.items = b.items.filter(it => { if (want.has(it.id) && it.by === p.rk) { del.push(it.id); b.ids.delete(it.id); b.bytes -= it.size; return false; } return true; });
         if (del.length) this.broadcast(rs, { t: 'wb', op: 'del', ids: del }, p);
+        return;
+      }
+    }
+  }
+
+  // ---- Vidéo YouTube partagée (1.13) ----
+  // Une seule personne partage à la fois et elle seule pilote : lancer / changer de vidéo, lecture, pause, position,
+  // vitesse, arrêt. Les autres regardent et règlent leur volume chez eux (le volume ne passe jamais par ici).
+  // Salon public / TLS : l'état est validé (identifiant sur 11 caractères, position, vitesse) ; salon chiffré :
+  // l'état est opaque (enc), validé par chaque navigateur après déchiffrement. Rien n'est écrit sur disque.
+  ytMeta(rs) { const y = rs.yt; return y ? { owner: y.owner, ownerName: y.ownerName } : null; }
+  ytMsg(rs, op) {
+    const y = rs.yt;
+    return { t: 'yt', op, share: this.ytMeta(rs), from: y.owner, age: Math.max(0, Date.now() - y.at), ...(y.enc ? { enc: y.enc } : { s: y.s }) };
+  }
+  onYouTube(p, m) {
+    const rs = p.rs, y = rs.yt, e2 = !!rs.room.e2ee;
+    if (!p.hello || typeof m.op !== 'string' || this.cfg.youtubeEnabled === false) return;
+    const lim = k => this.rate(p, 'yt-' + k, YT.rate[k]);
+    const body = () => {
+      if (e2) return isEnc(m.enc, YT.enc) ? { enc: m.enc } : null;
+      return ytValid(m.s) ? { s: ytClean(m.s) } : null;
+    };
+    switch (m.op) {
+      case 'open': {
+        if (!lim('meta')) return this.send(p, { t: 'error', code: 'yt', message: 'Trop de changements de vidéo d\'un coup : réessaie dans une seconde.' });
+        if (y && y.owner !== p.id) return this.send(p, { t: 'error', code: 'yt-busy', message: `${y.ownerName} partage déjà une vidéo YouTube : il faut d'abord qu'il arrête son partage.` });
+        const b = body(); if (!b) return this.send(p, { t: 'error', code: 'yt', message: 'Lien YouTube invalide.' });
+        const change = !!y;
+        rs.yt = { owner: p.id, ownerRk: p.rk, ownerName: p.name, at: Date.now(), ...b };
+        this.broadcast(rs, this.ytMsg(rs, 'open'));
+        this.system(rs, change ? `${p.name} a changé de vidéo YouTube` : `${p.name} partage une vidéo YouTube`);
+        return;
+      }
+      case 'state': {
+        if (!y || y.owner !== p.id || !lim('state')) return;
+        const b = body(); if (!b) return;
+        const { enc: _e, s: _s, ...rest } = y;
+        rs.yt = { ...rest, ...b, at: Date.now() };
+        this.broadcast(rs, this.ytMsg(rs, 'state'), p);
+        return;
+      }
+      case 'close': {
+        if (!y || y.owner !== p.id || !lim('meta')) return;
+        rs.yt = null; this.broadcast(rs, { t: 'yt', op: 'close' }); this.system(rs, `${p.name} a arrêté le partage YouTube`);
         return;
       }
     }

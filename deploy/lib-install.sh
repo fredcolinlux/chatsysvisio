@@ -129,6 +129,8 @@ MAX_PARTICIPANTS='25'
 ROOM_TTL_DAYS='30'
 # Salon PUBLIC supprimé après N minutes sans personne (0 = jamais)
 PUBLIC_ROOM_IDLE_TTL_MIN='10'
+# Lecteur YouTube partagé dans les salons (cadre youtube-nocookie.com sur la page d'appel ; false = désactivé)
+YOUTUBE_ENABLED='true'
 UPLOAD_MAX_MB='10'
 # Espace disque max des fichiers d'un salon (Mo) et nombre max de salons
 ROOM_QUOTA_MB='200'
@@ -197,6 +199,7 @@ migrate_env() {
   env_set_default ACCOUNTS_ONLY_CREATE "false" "Création de salons réservée aux comptes"
   env_set_default GUEST_JOIN "true" "Invités sans compte autorisés à rejoindre par lien"
   env_set_default PUBLIC_ROOM_IDLE_TTL_MIN "10" "Salon PUBLIC supprimé après N minutes sans personne (0 = jamais)"
+  env_set_default YOUTUBE_ENABLED "true" "Lecteur YouTube partagé (1.13) : cadre youtube-nocookie.com sur la page d'appel (false = désactivé)"
   chmod 0600 "$ENV_FILE"
 }
 

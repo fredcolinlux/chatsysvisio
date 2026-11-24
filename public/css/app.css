@@ -822,3 +822,56 @@ body.idle.incall .stage{cursor:none}
 .camsec{font-size:12px;font-weight:600;color:var(--fg2);letter-spacing:.01em;margin:6px 2px -2px}
 .tg:disabled{opacity:.55}
 @media (max-width:760px){.camzoom{flex-wrap:wrap}.camzoom .btn{height:36px}}
+
+/* ---- Vidéo YouTube partagée (1.13) ---- */
+.tile.yt{background:#0f1115;isolation:isolate}
+.tile.yt .ytslot{position:absolute;inset:0}
+.tile.yt .lab{z-index:3}
+.incall .tile.yt:not(.small) .lab{display:none}
+.ytbox{position:absolute;z-index:2;display:flex;flex-direction:column;justify-content:center;container-type:size;border-radius:var(--r);overflow:hidden;background:#0f1115;box-shadow:0 0 0 1px rgba(255,255,255,.06)}
+.ytbox[hidden]{display:none}
+.incall .ytbox.small{border-radius:14px}
+.ytarea{position:relative;flex:1;min-height:0;background:#000}
+/* grande vue : vidéo 16:9 calée sur la place disponible, barre juste dessous (écran en hauteur : pas de bandes noires inutiles) */
+@supports (height:1cqh){.ytbox:not(.small) .ytarea{flex:0 1 auto;height:min(calc(100cqh - 46px),calc(100cqw * 9 / 16))}}
+.ytif{position:absolute;inset:0;width:100%;height:100%;border:0;display:block;background:#000}
+/* spectateurs : la lecture est pilotée par la personne qui partage, pas de clic dans le lecteur */
+.ytshield{position:absolute;inset:0;z-index:1;display:none}
+.ytbox:not(.owner) .ytshield,.ytbox.small .ytshield{display:block}
+.ytbox.small .ytshield{cursor:pointer}
+.ytbox.touch:not(.small) .ytshield{display:none}
+.ytbar{flex:none;display:flex;align-items:center;gap:6px;padding:6px 8px 6px 12px;background:rgba(20,23,29,.92);box-shadow:0 -1px 0 rgba(255,255,255,.06);color:#c8ccd4;font-size:13px;min-height:46px}
+.ytbox.small .ytbar,.ytbox.small .ytstatus,.ytbox.small .ytunmute{display:none}
+.ytwho{display:flex;align-items:center;gap:8px;min-width:0;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:500;color:#eceef2}
+.ytwho svg.i{width:18px;height:18px;flex:none;color:#7eaaff}
+.ytgrp.vol{display:flex;align-items:center;gap:6px;padding:0 4px}
+.ytb{height:34px;min-width:34px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;gap:6px;color:#c8ccd4;padding:0 8px;transition:transform var(--d-press) var(--ease-out),background-color var(--d-fast) var(--ease-out),color var(--d-fast) var(--ease-out)}
+.ytb svg.i{width:17px;height:17px}
+.ytb.txt{font-weight:500}
+.ytb.stop{color:#ffb3b5}
+.ytb[aria-pressed="true"]{color:#9dbfff;background:rgba(79,140,255,.16)}
+.ytb:active{transform:scale(var(--press))}
+.ytb:focus-visible{outline:2px solid var(--ring);outline-offset:1px}
+@media (hover:hover){.ytb:hover{background:rgba(255,255,255,.08);color:#fff}.ytb.stop:hover{background:rgba(229,72,77,.18);color:#fff}}
+.ytvol{--p:80%;-webkit-appearance:none;appearance:none;width:110px;height:4px;border-radius:999px;background:linear-gradient(90deg,#4f8cff var(--p),rgba(255,255,255,.18) var(--p));outline:0;cursor:pointer}
+.ytvol::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.4);transition:transform var(--d-press) var(--ease-out)}
+.ytvol::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.ytvol:active::-webkit-slider-thumb{transform:scale(1.15)}
+.ytvol:focus-visible{box-shadow:0 0 0 3px rgba(79,140,255,.45)}
+.ytunmute{position:absolute;z-index:2;left:50%;top:50%;transform:translate(-50%,-50%);display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 18px;border-radius:999px;background:#2f6fe4;color:#fff;font-weight:600;font-size:14px;box-shadow:0 8px 24px -8px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,255,255,.12);animation:wbFade var(--d-base) var(--ease-out) both;transition:transform var(--d-press) var(--ease-out)}
+.ytunmute[hidden]{display:none}
+.ytunmute svg.i{width:18px;height:18px}
+.ytunmute:active{transform:translate(-50%,-50%) scale(var(--press))}
+.ytstatus{position:absolute;z-index:3;left:50%;top:16px;transform:translateX(-50%);display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:4px 10px;max-width:min(560px,calc(100% - 24px));padding:9px 14px;border-radius:14px;background:rgba(14,17,23,.88);color:#eceef2;font-size:13px;line-height:1.4;text-align:center;box-shadow:0 0 0 1px rgba(255,255,255,.08),0 8px 24px -8px rgba(0,0,0,.5);animation:wbFade var(--d-fast) var(--ease-out) both}
+.ytstatus[hidden]{display:none}
+.ytstatus a{color:#9dbfff;font-weight:600;text-decoration:none;white-space:nowrap}
+.ytstatus a:hover{text-decoration:underline}
+.ythint{color:var(--faint);font-size:12.5px;line-height:1.45;margin:4px 0 0}
+@media (max-width:760px){
+  .ytbar{padding:4px 6px 4px 10px;gap:2px}
+  .ytvol{width:84px}
+  .ytb{height:38px;min-width:38px;padding:0 6px}
+  .ytb .hide-xs{display:none}
+  .ytwho{font-size:12.5px}
+}
+@media (prefers-reduced-motion:reduce){.ytunmute,.ytstatus{animation:none}}

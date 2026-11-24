@@ -45,7 +45,19 @@ if (https) {
 } else console.log('  · HSTS et cookie Secure : vérifiés avec --https (servis seulement derrière HTTPS)');
 const room = await page('/r/controle-entetes');
 const rc = room.g('content-security-policy');
-ok(/script-src 'self' 'wasm-unsafe-eval'/.test(rc) && !/unsafe-inline|unsafe-eval'/.test(rc.replace("'wasm-unsafe-eval'", '')), "Page d'appel : seul ajout 'wasm-unsafe-eval' (détourage local)");
+ok(/script-src 'self' 'wasm-unsafe-eval'/.test(rc) && !/unsafe-inline|unsafe-eval'/.test(rc.replace("'wasm-unsafe-eval'", '')), "Page d'appel : script-src 'self' 'wasm-unsafe-eval' seulement (détourage local, aucun script tiers)");
+// 1.13 : lecteur YouTube partagé — un seul cadre autorisé (youtube-nocookie.com), aucun script YouTube dans la page
+const rd = Object.fromEntries(rc.split(';').map(x => x.trim().split(/\s+/)).filter(x => x[0]).map(([k, ...v]) => [k, v]));
+const ytOn = !!rd['frame-src'];
+if (ytOn) {
+  ok(rd['frame-src'].join(' ') === 'https://www.youtube-nocookie.com', "Page d'appel : frame-src limité à https://www.youtube-nocookie.com", rd['frame-src'].join(' '));
+  ok(!/https?:\/\/(?!127\.0\.0\.1|localhost)/.test(rc.replace(/wss?:\/\/\S+/g, '').replace('frame-src https://www.youtube-nocookie.com', '')), "Page d'appel : aucune autre origine externe (scripts, images, connexions)");
+  ok(rd['frame-ancestors']?.join(' ') === "'none'" && room.g('x-frame-options') === 'DENY', "Page d'appel : ne peut toujours pas être encadrée elle-même");
+  const rp = room.g('permissions-policy');
+  ok(/autoplay=\(self "https:\/\/www\.youtube-nocookie\.com"\)/.test(rp) && /camera=\(self\)/.test(rp) && /microphone=\(self\)/.test(rp) && /geolocation=\(\)/.test(rp), "Page d'appel : lecture automatique déléguée au seul cadre YouTube, caméra/micro inchangés");
+  ok(!room.g('cross-origin-embedder-policy') && room.g('cross-origin-opener-policy') === 'same-origin', "Page d'appel : sans COEP (cadre tiers), COOP same-origin conservé");
+} else console.log("  · Page d'appel : lecteur YouTube désactivé (YOUTUBE_ENABLED=0), en-têtes identiques à l'accueil");
+ok(!d['frame-src'] && g('cross-origin-embedder-policy') === 'require-corp', "Accueil : ni cadre tiers ni assouplissement (COEP require-corp)");
 const f = await page('/f/AAAAAAAAAAAAAAAA/x');
 ok([403, 404].includes(f.r.status) && f.g('x-content-type-options') === 'nosniff', 'Fichiers partagés : accès refusé sans session, nosniff');
 const t = await fetch(base + '/', { method: 'TRACE', headers: H }).catch(() => ({ status: 0 }));

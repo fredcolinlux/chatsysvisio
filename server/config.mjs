@@ -45,6 +45,7 @@ export function loadConfig(over = {}) {
     ollaUrl: (env.OLLA_URL || '').replace(/\/+$/, ''),
     ollaModel: env.OLLA_MODEL || 'qwen3:14b',
     aiEnabled: bool(env.AI_ENABLED, false),
+    youtubeEnabled: bool(env.YOUTUBE_ENABLED, true), // 1.13 : lecteur YouTube partagé (0 : désactivé, en-têtes de la page d'appel inchangés)
     version: env.APP_VERSION || '',
     build: env.APP_BUILD || '',
     // Préfixe des étiquettes de dérivation E2EE (vide = 'chatsysvisio/e2ee/v1/'). Une installation migrée d'un ancien nom

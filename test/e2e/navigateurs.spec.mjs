@@ -2,6 +2,7 @@
 import { test, expect, chromium } from '@playwright/test';
 import fs from 'node:fs';
 import { createRoom, joinRoom, waitMedia, withQuery, expectAudible, measureMicFx, measureTune, measureIso } from './helpers.mjs';
+import { stubYouTube, stubState } from './youtube-stub.mjs';
 
 const chromeOpts = {
   executablePath: fs.existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : undefined,
@@ -14,9 +15,11 @@ const micOk = browser => browser.browserType().name() !== 'firefox';
 
 async function pair(browser, baseURL, query = '', opts = {}) {
   const wctx = browser.browserType().name() === 'webkit' ? await browser.newContext({ permissions: ['camera', 'microphone'] }) : await browser.newContext();
+  if (opts.yt) await stubYouTube(wctx);
   const w = await wctx.newPage();
   const chrome = await chromium.launch(chromeOpts);
-  const c = await (await chrome.newContext({ baseURL, ignoreHTTPSErrors: true })).newPage();
+  const cctx = await chrome.newContext({ baseURL, ignoreHTTPSErrors: true }); if (opts.yt) await stubYouTube(cctx);
+  const c = await cctx.newPage();
   const url = await createRoom(c, 'Safari et Chrome ' + Date.now(), opts);
   await joinRoom(c, url, 'Chloé (Chrome)');
   await w.goto(withQuery(url, query));
@@ -157,4 +160,18 @@ test('isolateur de voix : musique et voix lointaine retirées dans les pauses, v
   await p.locator('.tg[data-fx=tune]').first().click();
   await expect(p.locator('.isoset .isowarn').first()).toContainText('Pour chanter');
   await ctx.close();
+});
+
+// 1.13 : vidéo YouTube partagée depuis Chrome, regardée dans WebKit (Safari / iPhone) et Firefox (lecteur bouchonné)
+test('↔ Chrome : vidéo YouTube partagée, lecture en ligne et volume personnel', async ({ browser, baseURL }) => {
+  const { w, c, chrome, wctx } = await pair(browser, baseURL, '', { yt: true });
+  await expect(c.locator('.tile')).toHaveCount(2);
+  await c.click('#dYt'); await c.fill('#ytUrl', 'https://youtu.be/dQw4w9WgXcQ?t=20'); await c.click('#ytGo');
+  await expect.poll(async () => { const s = await stubState(w); return s && s.state === 1 && s.now >= 20 && s.playsinline === '1' && s.controls === '0'; }, { timeout: 20000 }).toBe(true);
+  await w.locator('.ytvol').fill('25');
+  await expect.poll(async () => (await stubState(w))?.vol, { timeout: 5000 }).toBe(25);
+  expect((await stubState(c)).vol).toBe(80);
+  await c.click('.ytbar .stop');
+  await expect(w.locator('.ytbox')).toHaveCount(0);
+  await wctx.close(); await chrome.close();
 });

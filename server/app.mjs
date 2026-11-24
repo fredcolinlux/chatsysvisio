@@ -148,7 +148,7 @@ export function createApp(cfg) {
   }
 
   const assetVersion = String(cfg.build || cfg.version || 'dev'), versionCache = new Map();
-  function serveStatic(req, res, rel, { wasm = false } = {}) {
+  function serveStatic(req, res, rel, { wasm = false, youtube = false } = {}) {
     const base = cfg.publicDir;
     const file = path.normalize(path.join(base, rel));
     if (!file.startsWith(base + path.sep)) return notFound(req, res);
@@ -156,7 +156,7 @@ export function createApp(cfg) {
     if (!st.isFile()) return notFound(req, res);
     const ext = path.extname(file).toLowerCase(), type = MIME[ext];
     if (!type) return notFound(req, res);
-    securityHeaders(req, res, cfg, { wasm });
+    securityHeaders(req, res, cfg, { wasm, youtube });
     const immutable = rel.startsWith('vendor/') || rel.startsWith('fonts/') || rel.startsWith('models/');
     // HTML, modules JS et service worker : adresses versionnées par le build (aucun mélange ancien/nouveau code)
     const body = immutable ? null : versioned(rel, ext, file, st);
@@ -436,7 +436,7 @@ export function createApp(cfg) {
       if (p === '/' || p === '/index.html') return serveStatic(req, res, 'index.html');
       if (p === '/public' || p === '/public/') return serveStatic(req, res, 'public.html');
       if (p === '/about') { securityHeaders(req, res, cfg); res.writeHead(302, { Location: '/#a-propos' }); return res.end(); }
-      if (/^\/r\/[a-z0-9-]{1,48}\/?$/.test(p)) return serveStatic(req, res, 'room.html', { wasm: true });
+      if (/^\/r\/[a-z0-9-]{1,48}\/?$/.test(p)) return serveStatic(req, res, 'room.html', { wasm: true, youtube: true });
       if (p === '/.well-known/security.txt' && cfg.securityContact) {
         securityHeaders(req, res, cfg);
         const exp = new Date(Date.now() + 180 * 864e5).toISOString().replace(/\.\d+Z$/, 'Z');
