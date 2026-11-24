@@ -1,6 +1,6 @@
 # ChatSysVisio — Manuel d'installation et d'utilisation
 
-*Version 1.12.0 · licence AGPL-3.0-or-later · fork de Camus*
+*Version 1.13.0 · licence AGPL-3.0-or-later · fork de Camus*
 
 ![Accueil](img/accueil-bureau.png)
 
@@ -17,8 +17,8 @@ Fonctions principales :
 - **chiffrement de bout en bout** des salons privés : vidéo, son, écran, chat, réactions et fichiers sont illisibles pour
   le serveur ; la clé est dans le lien (`#k=…`), jamais envoyée au serveur ;
 - vidéo jusqu'en **1080p** (Auto / 360p / 720p / 1080p / Éco), HD envoyée seulement à qui l'affiche en grand ;
-- mosaïque paginée ou **mode orateur**, partage d'écran, **tableau blanc partagé** (croquis à plusieurs), plein écran,
-  image dans l'image ;
+- mosaïque paginée ou **mode orateur**, partage d'écran, **tableau blanc partagé** (croquis à plusieurs), **vidéo YouTube
+  regardée ensemble** (lecture synchronisée, volume propre à chacun), plein écran, image dans l'image ;
 - **flou** et **arrière-plans** (détourage MediaPipe exécuté dans le navigateur), **rehaussement faible lumière**
   (éclaircissement et débruitage de l'image sur la carte graphique) ;
 - **traitement du micro** : réduction de bruit (RNNoise), **autotune**, compresseur et dé-esseur, activables séparément ;
@@ -500,11 +500,69 @@ par personne pour protéger le serveur.
 
 ![Tableau blanc sur mobile](img/tableau-blanc-mobile.png)
 
+### Vidéo YouTube partagée (1.13)
+
+Pour regarder une vidéo YouTube **ensemble**, comme un partage d'écran mais avec l'image et le son d'origine : bouton
+**Partager une vidéo YouTube** dans le dock (à droite du tableau blanc ; sur mobile : menu « … »), collez le lien, puis
+**Partager**. La vidéo s'affiche **en grand chez tout le monde**, y compris chez qui arrive en cours de route (même
+vidéo, même position, même vitesse, lecture ou pause).
+
+Liens acceptés : `youtube.com/watch?v=…`, `youtu.be/…`, `youtube.com/shorts/…`, `youtube.com/live/…`,
+`youtube.com/embed/…`, `m.youtube.com`, `music.youtube.com`, ou l'identifiant seul (11 caractères), avec ou sans
+`t=` (`t=90`, `t=1m30s`, `#t=1:30`) pour démarrer à un moment précis. Seul l'**identifiant** de la vidéo circule
+(jamais l'adresse collée) ; il est vérifié dans le navigateur et par le serveur.
+
+**Une seule personne partage à la fois** et c'est elle seule qui pilote :
+
+| Qui | Peut |
+|---|---|
+| La personne qui partage | lecture, pause, avancer / reculer, vitesse (avec les commandes du lecteur YouTube), **Changer** de vidéo, **Arrêter** le partage |
+| Les autres | regarder, régler **leur propre volume** ou couper le son **chez eux** ; épingler une autre vignette à la place |
+
+Si quelqu'un d'autre essaie de partager pendant ce temps, il voit « *X partage déjà une vidéo YouTube : il faut d'abord
+qu'il arrête son partage.* » (refus appliqué aussi par le serveur). Si la personne qui partage **quitte le salon**, le
+partage s'arrête pour tout le monde (un message l'indique dans le chat) et quelqu'un d'autre peut prendre le relais.
+
+**Volume individuel** : la barre sous la vidéo règle le son **uniquement sur votre appareil** ; il n'est jamais envoyé
+aux autres ni au serveur, et votre navigateur le retient pour la prochaine fois. Le son de la vidéo s'ajoute à celui de
+l'appel ; baisser automatiquement les voix pendant la vidéo n'est pas prévu (idée pour plus tard).
+
+**Synchronisation** : la personne qui partage envoie sa position à chaque action (lecture, pause, saut, vitesse) et
+toutes les 4 secondes pendant la lecture. Chez les autres, la vidéo se recale toute seule si elle s'écarte de plus de
+**1,5 seconde** (chargement lent, onglet en arrière-plan). Les spectateurs n'envoient rien : pas d'effet d'écho. Dans un
+salon **privé ou protégé par mot de passe**, l'identifiant de la vidéo et la position sont **chiffrés de bout en bout**
+comme le chat ; dans un salon public, ils passent en clair jusqu'au serveur (TLS).
+
+**Lecture automatique** : les navigateurs (surtout Safari sur iPhone) peuvent refuser de lancer une vidéo **avec le
+son** sans geste de votre part. ChatSysVisio la démarre alors **sans le son** et affiche un bouton **Activer le son** ;
+sur iPhone, si besoin, touchez une fois la vidéo. La lecture se fait **dans la page** (pas en plein écran forcé) sur
+Android comme sur iPhone.
+
+Messages possibles :
+
+| Message | Cause |
+|---|---|
+| « Le propriétaire de cette vidéo n'autorise pas sa lecture en dehors de YouTube » | vidéo **non intégrable** (erreurs YouTube 101 / 150 : souvent clips musicaux, sport, certaines chaînes) : choisissez-en une autre ; un lien **Ouvrir sur YouTube** reste proposé |
+| « Vidéo introuvable » | vidéo supprimée ou privée (erreur 100) |
+| « Le lecteur YouTube ne répond pas… bloqueur… » | une extension (uBlock, AdGuard, Brave…) ou un filtre réseau bloque `youtube-nocookie.com` : autorisez-le pour ce site |
+
+Bon à savoir :
+
+- le lecteur est celui de **YouTube** (domaine `youtube-nocookie.com`, sans cookie publicitaire avant la lecture) :
+  YouTube voit l'adresse IP de chaque spectateur, comme sur youtube.com ;
+- les **publicités** YouTube ne sont pas synchronisées : chacun voit les siennes, puis la vidéo se recale ;
+- vidéos réservées aux membres, à âge restreint ou à achat : non lisibles dans le lecteur intégré ;
+- l'administrateur peut désactiver la fonction (`YOUTUBE_ENABLED=false` dans le `.env`, voir § 10).
+
+![Vidéo YouTube partagée](img/youtube-salon-bureau.jpg)
+
+![Vidéo YouTube sur mobile](img/youtube-salon-mobile.jpg)
+
 ### Pendant l'appel
 
 | Action | Où |
 |---|---|
-| Micro, caméra, partage d'écran, **tableau blanc**, main levée, réactions | dock en bas (sur mobile : partage d'écran et tableau blanc dans le menu « … ») |
+| Micro, caméra, partage d'écran, **tableau blanc**, **vidéo YouTube**, main levée, réactions | dock en bas (sur mobile : partage d'écran, tableau blanc et vidéo YouTube dans le menu « … ») |
 | Chat, fichiers et images (10 Mo par défaut) | bouton bulle → onglet Messages ; trombone pour joindre |
 | Liste des personnes | onglet Personnes |
 | **Mode orateur** / grille | boutons en haut à droite |
@@ -564,11 +622,11 @@ Un code de secours remplace une fois le code TOTP à la connexion.
 tar -xzf chatsysvisio-<version>.tar.gz && cd chatsysvisio-<version> && bash update.sh
 ```
 
-Ou avec l'archive de **mise à jour** (même code, sans les tests), par exemple pour passer de 1.6.0 … 1.11.0 à 1.12.0 :
+Ou avec l'archive de **mise à jour** (même code, sans les tests), par exemple pour passer de 1.6.0 … 1.12.0 à 1.13.0 :
 
 ```bash
-sha256sum -c chatsysvisio-mise-a-jour-1.12.0-b8.tar.gz.sha256
-tar -xzf chatsysvisio-mise-a-jour-1.12.0-b8.tar.gz && cd chatsysvisio-maj && bash update.sh
+sha256sum -c chatsysvisio-mise-a-jour-1.13.0-b9.tar.gz.sha256
+tar -xzf chatsysvisio-mise-a-jour-1.13.0-b9.tar.gz && cd chatsysvisio-maj && bash update.sh
 ```
 
 Depuis la 1.9.0, l'archive contient déjà le modèle de l'isolateur, précompressé : le serveur n'a rien à télécharger de plus.
@@ -590,6 +648,9 @@ Aucune vidéo ni aucun son n'est enregistré. Les salons privés et ceux protég
 participant (`PUBLIC_ROOM_IDLE_TTL_MIN`, ajouté au `.env` par `update.sh` en 1.12 ; `0` = jamais ; puis
 `systemctl restart chatsysvisio`).
 
+Lecteur YouTube partagé (1.13) : `YOUTUBE_ENABLED` (ajouté au `.env` par `update.sh`, `true` par défaut) ; `false`
+puis `systemctl restart chatsysvisio` retire le bouton et rend à la page d'appel exactement les en-têtes de la 1.12.
+
 ## 11. Sécurité et note A+ WebGuardian
 
 - en-têtes stricts envoyés par l'application : **CSP** sans `unsafe-inline`, **HSTS** 2 ans + preload, X-Frame-Options,
@@ -599,6 +660,11 @@ participant (`PUBLIC_ROOM_IDLE_TTL_MIN`, ajouté au `.env` par `update.sh` en 1.
 - administration invisible hors réseau local (404), mot de passe scrypt + TOTP, blocage après 5 échecs ;
 - service systemd durci, code en lecture seule, utilisateur dédié sans shell ;
 - `ALLOW_FROM` limite le port 8790 à NPM.
+- lecteur YouTube (1.13) : **aucun script YouTube n'est chargé dans la page** ; le lecteur est un cadre isolé
+  (`sandbox`, permissions minimales) piloté par messages. Seule la **page d'appel** (`/r/…`) gagne
+  `frame-src https://www.youtube-nocookie.com`, la délégation *autoplay* / *plein écran* à ce seul cadre, et perd
+  l'en-tête COEP (qui interdirait tout cadre tiers ; l'appli n'utilise pas l'isolation cross-origin). L'accueil, que
+  note WebGuardian, garde exactement les mêmes en-têtes : la note **A+** n'est pas affectée.
 
 Contrôle :
 
@@ -625,6 +691,9 @@ Code source : conformément à l'AGPL, `/source.tar.gz` sert le code exact de la
 | Caméra refusée | HTTPS obligatoire ; autoriser la caméra dans le cadenas de la barre d'adresse. |
 | « Lien incomplet » | le lien a été coupé : recopier le lien complet avec `#k=…`. |
 | **Couleurs un peu différentes sous Firefox** | Firefox ignore l'espace colorimétrique des images VP8 à l'affichage : teintes légèrement décalées (jaune plus vert, contrastes accentués). Chrome, Edge et Safari sont fidèles. Contournement : utiliser Chrome / Edge, ou un autre navigateur côté émetteur. |
+| **Vidéo YouTube** : « n'autorise pas sa lecture en dehors de YouTube » | vidéo non intégrable (101 / 150), décision du propriétaire de la vidéo : en choisir une autre |
+| **Vidéo YouTube** : « Le lecteur ne répond pas » | bloqueur de publicités / filtre DNS (Pi-hole, AdGuard Home…) qui bloque `youtube-nocookie.com` : l'autoriser |
+| **Vidéo YouTube** sans son | lecture démarrée en muet par le navigateur : bouton **Activer le son** (iPhone : toucher la vidéo) ; vérifier aussi **son propre** volume sous la vidéo |
 | Service arrêté | `journalctl -u chatsysvisio -n 80` ; `systemctl restart chatsysvisio`. |
 
 Diagnostic : menu « … » → **Infos techniques** (versions, codecs, paquets envoyés / reçus / décodés). Rien n'est envoyé.

@@ -149,7 +149,7 @@ Version et build installés puis nouveaux sont affichés au début (`curl -s htt
 Sauvegarde complète dans `/var/backups/chatsysvisio/chatsysvisio-maj-DATE.tar.gz` (5 dernières gardées). L'ancien code est
 gardé dans `/opt/chatsysvisio.prev`. Si la nouvelle version ne démarre pas, l'ancienne est remise en place automatiquement.
 La configuration existante est conservée (seules les nouvelles clés sont ajoutées : en 1.2, `ADMIN_PATH`, `ADMIN_ALLOW_CIDR`,
-`ADMIN_ALLOW_HTTP`, `SIGNUP_MODE`, `ACCOUNTS_ONLY_CREATE`, `GUEST_JOIN` ; en 1.12, `PUBLIC_ROOM_IDLE_TTL_MIN`). S'il n'existe encore aucun administrateur, la mise à
+`ADMIN_ALLOW_HTTP`, `SIGNUP_MODE`, `ACCOUNTS_ONLY_CREATE`, `GUEST_JOIN` ; en 1.12, `PUBLIC_ROOM_IDLE_TTL_MIN` ; en 1.13, `YOUTUBE_ENABLED`). S'il n'existe encore aucun administrateur, la mise à
 jour propose de le créer. La date et les versions de la mise à jour sont notées pour la page Système de l'administration. Le contrôle de sécurité (local +
 WebGuardian) est relancé à la fin ; `SECURITY_SCAN=0 bash update.sh` pour sauter la partie publique.
 
@@ -226,6 +226,7 @@ partagés (supprimés avec le salon). Aucune vidéo ni aucun son n'est enregistr
 | `GUEST_JOIN` | `false` : il faut un compte même pour rejoindre par lien |
 | `ROOM_TTL_DAYS` | salons privés ou à mot de passe supprimés après N jours sans activité (défaut 30) |
 | `PUBLIC_ROOM_IDLE_TTL_MIN` | 1.12 : salon **public** sans mot de passe supprimé N minutes après le départ du dernier participant (défaut 10 ; `0` = jamais ; décimales acceptées). Historique, fichiers et nom effacés |
+| `YOUTUBE_ENABLED` | 1.13 : lecteur YouTube partagé dans les salons (défaut `true`). Seule la page d'appel autorise alors le cadre `https://www.youtube-nocookie.com` (CSP `frame-src`, autoplay délégué, sans COEP) ; `false` : bouton retiré, en-têtes identiques à la 1.12 |
 
 Les réglages modifiés dans l'administration (création anonyme et code, `CREATE_PER_10MIN`, limite par salon, quotas,
 `MAX_ROOMS`, mode d'inscription…) s'appliquent **à chaud** et sont enregistrés dans `/var/lib/chatsysvisio/settings.json`

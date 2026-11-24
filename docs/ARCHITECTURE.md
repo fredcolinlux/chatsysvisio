@@ -287,6 +287,8 @@ métadonnées et la mention « bout en bout », jamais le contenu.
   page d'appel et ses scripts (nécessaire au détourage MediaPipe en WebAssembly : autorise la compilation de WASM servi par
   le site, pas `eval()` JavaScript). HSTS 2 ans (derrière HTTPS), X-Frame-Options DENY, nosniff, Referrer-Policy,
   Permissions-Policy (caméra, micro, capture d'écran : `self`), COOP same-origin, COEP require-corp, CORP same-origin.
+  Exception 1.13, **page d'appel seulement** : `frame-src https://www.youtube-nocookie.com`, autoplay / plein écran
+  délégués à cette seule origine, pas de COEP (voir « Vidéo YouTube partagée »).
 - Cookie `__Host-csv_sid` Secure, HttpOnly, SameSite=Strict ; jeton CSRF + contrôle d'Origin sur toutes les requêtes POST et
   le WebSocket. Mots de passe de salon hachés (scrypt, salés) ; limitation de débit sur la création, les essais de mot de
   passe (par IP et par salon), l'envoi de fichiers et les connexions WebSocket.
@@ -299,7 +301,8 @@ métadonnées et la mention « bout en bout », jamais le contenu.
   (`ROOM_QUOTA_MB`, 200 Mo) et nombre maximal de salons (`MAX_ROOMS`, 5000). Vérification scrypt asynchrone (la boucle
   d'événements, donc le relais vidéo, n'est jamais bloquée). `/healthz` ne donne la version qu'en local ; méthodes
   autres que GET/HEAD/POST : 405 avec `Allow`.
-- Tout est auto-hébergé (polices, MediaPipe, modèle de détourage, générateur de QR) ; aucune requête vers un tiers.
+- Tout est auto-hébergé (polices, MediaPipe, modèle de détourage, générateur de QR) ; aucune requête vers un tiers,
+  sauf le cadre YouTube quand quelqu'un partage une vidéo (1.13, désactivable : `YOUTUBE_ENABLED=false`).
 
 ## Administration et comptes (1.2)
 
@@ -492,6 +495,74 @@ autres (et les leurs pour lui) → « pas de son » jusqu'à Ctrl+F5. Correctifs
   du salon (AES-GCM), étiquette `wb:<id>` pour les traits conservés (l'id est lié au contenu) et `wbl` pour le direct ;
   le serveur ne voit que `{id, enc}`. Affichage : tuile `wb` placée en grande vue avant les écrans partagés, `S.pinned`
   prioritaire. Aucun changement de CSP (pas de script en ligne, pas de CDN).
+
+## Vidéo YouTube partagée (1.13)
+
+**Fichiers** : `public/js/youtube-model.js` (règles communes au navigateur et au serveur : analyse des liens, validation,
+position attendue, dérive, droits, volume local, messages d'erreur), `public/js/youtube.js` (pont postMessage et vue),
+`server/hub.mjs` (`onYouTube`), `server/security.mjs` (en-têtes de la page d'appel).
+
+**Intégration : cadre piloté par postMessage, sans script tiers.** Deux options étaient possibles : charger l'API IFrame
+(`https://www.youtube.com/iframe_api`, qui charge à son tour `https://www.youtube.com/s/player/…/www-widgetapi.js`), ou
+parler directement au cadre `youtube-nocookie.com/embed/ID?enablejsapi=1&origin=…` le protocole « widget » que ce
+script utilise (`{event:"listening"}`, puis `{event:"command", func, args}` ; en retour `onReady`, `initialDelivery`,
+`infoDelivery`, `onStateChange`, `onError`). La seconde est retenue : un script chargé dans la page s'exécuterait avec
+l'origine de ChatSysVisio, donc avec accès au DOM, aux messages et aux **clés de chiffrement de bout en bout** ; il
+faudrait aussi ouvrir `script-src` à une origine tierce dont le contenu change sans préavis. Ici, le code YouTube reste
+dans son cadre (autre origine, `sandbox="allow-scripts allow-same-origin allow-presentation"` : ni fenêtres, ni
+formulaires, ni navigation de la page), et la page n'accepte que les messages dont l'origine est
+`https://www.youtube-nocookie.com` **et** la fenêtre source ce cadre précis, n'en lisant que quelques nombres bornés
+(position, état, vitesse, volume, muet). Le cadre : `allow="autoplay; encrypted-media; fullscreen"`,
+`referrerpolicy="strict-origin-when-cross-origin"` (YouTube refuse un lecteur sans Referer : erreur 153),
+`playsinline=1` (lecture en ligne sur iPhone), `rel=0`, `iv_load_policy=3`, pas d'`autoplay` dans l'URL ; commandes
+du lecteur pour la personne qui partage (`controls=1`), masquées et protégées par un écran transparent pour les autres
+(`controls=0`, `disablekb=1`). Contrepartie : protocole non documenté officiellement (stable depuis des années, celui
+du script officiel) ; un test réel (`YT_REEL=1 npx playwright test youtube-reel`) le vérifie contre le vrai lecteur.
+
+**En-têtes (page `/r/…` uniquement, si `YOUTUBE_ENABLED` vaut `true`)** :
+
+| En-tête | 1.12 | 1.13 |
+|---|---|---|
+| CSP | sans `frame-src` (défaut `'self'`) | + `frame-src https://www.youtube-nocookie.com` ; `script-src 'self' 'wasm-unsafe-eval'` **inchangé** |
+| Permissions-Policy | `autoplay=(self)`, `fullscreen=(self)` | `autoplay=(self "https://www.youtube-nocookie.com")`, `fullscreen=(self "https://www.youtube-nocookie.com")` |
+| Cross-Origin-Embedder-Policy | `require-corp` | absent : `require-corp` (comme `credentialless`) bloque tout cadre tiers qui n'envoie pas lui-même COEP, ce que YouTube ne fait pas ; l'attribut `<iframe credentialless>` n'existe que dans Chrome. L'appli n'utilise ni `SharedArrayBuffer` ni `crossOriginIsolated`. |
+
+Inchangés : `default-src 'self'`, `frame-ancestors 'none'`, X-Frame-Options DENY, COOP / CORP same-origin, HSTS,
+aucun `unsafe-inline`. L'accueil et les autres pages (que WebGuardian note) gardent exactement les en-têtes de la 1.12 :
+`scripts/check-headers.mjs` le vérifie, ainsi que le `frame-src` exact de la page d'appel.
+
+**Droits (appliqués par le serveur)** : `rs.yt = { owner, ownerName, état, at }`, une seule vidéo par salon. `open` :
+accepté si personne ne partage ou si c'est la même personne (changement de vidéo), sinon erreur `yt-busy` (« X partage
+déjà une vidéo YouTube : il faut d'abord qu'il arrête son partage. ») ; `state` et `close` : seulement de la personne
+qui partage, ignorés sinon. Départ de cette personne → `close` diffusé et message système (pas de délai de grâce,
+contrairement au tableau blanc). Débits : 8 états / s, 5 ouvertures ou arrêts / s par personne. Rien sur disque.
+
+**État et synchronisation** : `{ id, pos, play, rate, n }` (identifiant sur 11 caractères `[A-Za-z0-9_-]`, position
+0–12 h, vitesse parmi 0,25…2, numéro d'ordre ; tout autre champ, une URL, un volume, est refusé). Salon public / TLS :
+validé par le serveur. Salon chiffré : scellé côté client (`seal(état, 'yt')`, AES-GCM avec contexte), le serveur ne
+relaie qu'un bloc opaque et chaque navigateur valide l'état déchiffré. Le serveur horodate chaque état reçu et
+envoie son **âge** (`age`, ms) aux arrivants : position attendue = `pos + âge × vitesse` en lecture. La personne qui
+partage envoie un état à chaque changement observé dans son lecteur (lecture / pause, vitesse, saut > 1,2 s) et toutes
+les 4 s pendant la lecture ; elle n'annonce pas de pause tant que la vidéo n'a jamais démarré (chargement, autoplay
+refusé). Les spectateurs n'émettent **aucun** état (pas de boucle d'écho) ; toutes les 500 ms, ils se recalent si
+l'écart dépasse **1,5 s** (pas pendant un chargement, au plus un saut toutes les 2,5 s), et immédiatement (seuil 0,4 s)
+sur une pause.
+
+**Volume** : `localStorage['csv-ytvol'] = { v: 0–100, m: muet }`, appliqué par `setVolume` / `mute` au seul lecteur
+local, jamais transmis (le serveur rejette d'ailleurs tout champ inconnu). **Autoplay** : si la lecture n'a pas démarré
+2,5 s après `playVideo` (jusqu'à 7,5 s si le lecteur est encore « non démarré »), relance en muet et bouton « Activer le
+son » ; sur iPhone, si le son reste coupé, l'écran protecteur s'efface 8 s pour un toucher dans le lecteur.
+
+**Affichage** : tuile `yt` prioritaire sur le tableau blanc et les écrans en mode orateur. Le cadre n'est **jamais
+déplacé dans le DOM** (un `<iframe>` déplacé se recharge) : il vit dans une couche de la scène (`#stage`, donc aussi en
+plein écran) et suit à chaque image la position de sa tuile (grande vue ou vignette). Vidéo calée en 16:9 par requêtes
+de conteneur, barre (volume personnel ; Changer / Arrêter pour la personne qui partage) dessous.
+
+**Limites** : publicités YouTube non synchronisées (chacun les siennes, recalage ensuite) ; vidéos non intégrables
+(101 / 150), privées, à âge restreint ou payantes non lisibles ; un bloqueur peut bloquer `youtube-nocookie.com`
+(message après 12 s sans réponse du cadre) ; YouTube voit l'IP et l'usage de chaque spectateur ; précision de
+synchronisation de l'ordre de la seconde (réseau + mise en mémoire tampon), pas à l'image près ; baisse automatique des
+voix pendant la vidéo non prévue (idée : atténuer de quelques dB les autres sons quand la vidéo joue, réglable).
 
 ## Durée de vie des salons (salons publics éphémères 1.12)
 

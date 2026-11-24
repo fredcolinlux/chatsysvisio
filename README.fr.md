@@ -45,6 +45,14 @@ Dérivé de [Camus](https://github.com/camuschat/camus) (AGPL-3.0, voir `NOTICE.
   tes pauses (modèle DeepFilterNet3 exécuté sur l'appareil, WebAssembly, ≈ 11 Mo téléchargés une seule fois depuis ton
   serveur, seulement s'il est activé) ; intensité réglable, ≈ 39 ms de latence, réduction de bruit incluse. Il ne sait pas
   *qui* parle : une voix aussi forte que la tienne passe pendant que tu parles.
+- **Vidéo YouTube partagée (1.13)** : on colle un lien YouTube (watch, youtu.be, shorts, live, embed, avec ou sans
+  `t=`) et tout le monde regarde la même vidéo en même temps, arrivants compris. Une seule personne partage à la fois et
+  pilote seule (lecture, pause, position, vitesse, changement, arrêt), droits appliqués par le serveur ; le partage
+  s'arrête si elle quitte le salon. **Volume et coupure propres à chacun** (jamais synchronisés, retenus localement),
+  recalage au-delà de 1,5 s d'écart, identifiant et position chiffrés de bout en bout dans les salons privés, repli en
+  lecture muette avec bouton « Activer le son », lecture en ligne sur iPhone / Android. Aucun script YouTube dans la
+  page : un cadre `youtube-nocookie.com` isolé, piloté par messages ; seule la page d'appel reçoit `frame-src`
+  (`YOUTUBE_ENABLED=false` pour désactiver).
 - **Tableau blanc partagé (1.7)** : croquis à plusieurs, affiché chez tous comme un partage d'écran ; stylet sensible à la
   pression, formes, gomme, annulation par personne, export PNG, verrou par la personne qui l'a ouvert ; traits vectoriels,
   chiffrés de bout en bout dans les salons privés.
