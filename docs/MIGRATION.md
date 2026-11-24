@@ -48,7 +48,8 @@ restent lisibles : **rien ne change pour les liens**. Restent à faire par chacu
 OLD=ancien-nom                       # nom court de l'ancienne installation
 systemctl disable --now $OLD $OLD-backup.timer $OLD-backup.path $OLD-status.timer $OLD-status.path
 tar -czf /root/avant-migration.tar.gz /etc/$OLD /var/lib/$OLD          # sauvegarde de sécurité
-tar -xzf chatsysvisio-1.5.1.tar.gz && cd chatsysvisio-1.5.1
+V=1.13.1                             # version téléchargée (1.5.1 ou plus récente)
+tar -xzf chatsysvisio-$V.tar.gz && cd chatsysvisio-$V
 NONINTERACTIVE=1 PUBLIC_URL=https://chat.example.com NPM_IP=10.0.0.10 bash install.sh
 systemctl stop chatsysvisio
 cp -a /var/lib/$OLD/. /var/lib/chatsysvisio/ && chown -R chatsysvisio:chatsysvisio /var/lib/chatsysvisio

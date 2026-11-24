@@ -1,6 +1,6 @@
 # ChatSysVisio — Manuel d'installation et d'utilisation
 
-*Version 1.13.0 · licence AGPL-3.0-or-later · fork de Camus*
+*Version 1.13.1 · licence AGPL-3.0-or-later · fork de Camus*
 
 ![Accueil](img/accueil-bureau.png)
 
@@ -58,16 +58,18 @@ la police Inter, MediaPipe et son modèle, et **Node.js 24 officiel** (linux-x64
 Depuis votre poste :
 
 ```bash
-scp chatsysvisio-1.6.0.tar.gz chatsysvisio-1.6.0.tar.gz.sha256 root@10.0.0.20:/root/
+V=1.13.1      # version téléchargée (dernière release du dépôt)
+scp chatsysvisio-$V.tar.gz chatsysvisio-$V.tar.gz.sha256 root@10.0.0.20:/root/
 ```
 
 Sous Windows, WinSCP ou `pscp` (PuTTY) font la même chose. Dans le CT :
 
 ```bash
 cd /root
-sha256sum -c chatsysvisio-1.6.0.tar.gz.sha256      # doit afficher : OK
-tar -xzf chatsysvisio-1.6.0.tar.gz
-cd chatsysvisio-1.6.0
+V=1.13.1                                          # même version que ci-dessus
+sha256sum -c chatsysvisio-$V.tar.gz.sha256        # doit afficher : OK
+tar -xzf chatsysvisio-$V.tar.gz
+cd chatsysvisio-$V
 sha256sum -c --quiet SHA256SUMS                     # intégrité de chaque fichier (aucune sortie = OK)
 ```
 
@@ -622,11 +624,12 @@ Un code de secours remplace une fois le code TOTP à la connexion.
 tar -xzf chatsysvisio-<version>.tar.gz && cd chatsysvisio-<version> && bash update.sh
 ```
 
-Ou avec l'archive de **mise à jour** (même code, sans les tests), par exemple pour passer de 1.6.0 … 1.12.0 à 1.13.0 :
+Ou avec l'archive de **mise à jour** (même code, sans les tests), depuis la 1.6.0 ou plus récente (ici la 1.13.1, build 10 ; mettre le nom exact de l'archive reçue) :
 
 ```bash
-sha256sum -c chatsysvisio-mise-a-jour-1.13.0-b9.tar.gz.sha256
-tar -xzf chatsysvisio-mise-a-jour-1.13.0-b9.tar.gz && cd chatsysvisio-maj && bash update.sh
+MAJ=chatsysvisio-mise-a-jour-1.13.1-b10
+sha256sum -c $MAJ.tar.gz.sha256
+tar -xzf $MAJ.tar.gz && cd chatsysvisio-maj && bash update.sh
 ```
 
 Depuis la 1.9.0, l'archive contient déjà le modèle de l'isolateur, précompressé : le serveur n'a rien à télécharger de plus.

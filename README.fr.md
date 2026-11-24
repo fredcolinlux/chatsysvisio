@@ -62,8 +62,9 @@ Dérivé de [Camus](https://github.com/camuschat/camus) (AGPL-3.0, voir `NOTICE.
 **Installation rapide (paquet autonome hors ligne, Debian 13)** :
 
 ```bash
-sha256sum -c chatsysvisio-1.12.0.tar.gz.sha256
-tar -xzf chatsysvisio-1.12.0.tar.gz && cd chatsysvisio-1.12.0 && bash install.sh
+V=1.13.1                     # version téléchargée (dernière release du dépôt)
+sha256sum -c chatsysvisio-$V.tar.gz.sha256
+tar -xzf chatsysvisio-$V.tar.gz && cd chatsysvisio-$V && bash install.sh
 ```
 
 Manuel complet : **`docs/MANUEL.md`** · migration depuis l'ancien nom : **`docs/MIGRATION.md`** · détails : **`README-INSTALL.md`**. Choix techniques et limites : **`docs/ARCHITECTURE.md`**.

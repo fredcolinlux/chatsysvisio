@@ -12,7 +12,7 @@ test('captures YouTube', async ({ browser }) => {
   const ctx = async o => { const c = await browser.newContext(o); if (process.env.YT_STUB) await stubYouTube(c); return c.newPage(); };
   const a = await ctx({ viewport: { width: 1440, height: 900 } });
   const url = await createRoom(a, 'Soirée ciné', {});
-  await joinRoom(a, url, 'Fred');
+  await joinRoom(a, url, 'Bruno');
   const b = await ctx({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   await joinRoom(b, url, 'Camille');
   const m = await ctx(iphone);

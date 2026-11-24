@@ -41,8 +41,9 @@ The release archive bundles the code, its dependencies, the Inter font, MediaPip
 **Node.js 24** build (linux-x64 and linux-arm64, SHA256-checked). No network access is needed during installation.
 
 ```bash
-sha256sum -c chatsysvisio-1.12.0.tar.gz.sha256
-tar -xzf chatsysvisio-1.12.0.tar.gz && cd chatsysvisio-1.12.0
+V=1.13.1                     # the version you downloaded (latest release)
+sha256sum -c chatsysvisio-$V.tar.gz.sha256
+tar -xzf chatsysvisio-$V.tar.gz && cd chatsysvisio-$V
 sudo bash install.sh        # asks for the public URL and the reverse proxy IP
 ```
 
